@@ -68,7 +68,7 @@ input[type=range]{padding:0}
     <h2>2. Bouches de soufflage (insufflation)</h2>
     <div id="soufflage"></div>
     <div class="btnline"><button class="mini" onclick="addSupply()">+ Ajouter une bouche de soufflage</button></div>
-    <p class="note">Plafond : X, Y = position (Z ignoré), direction réglable. Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur, soufflage horizontal vers l'intérieur de la pièce.</p>
+    <p class="note">Plafond : X, Y = position (Z ignoré), direction réglable. Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur, soufflage horizontal vers l'intérieur de la pièce. Astuce : déplacez aussi les bouches, reprises et mobilier directement à la souris sur la vue de dessus.</p>
     <h2>3. Reprises d'air (extraction)</h2>
     <div id="extraction"></div>
     <div class="btnline"><button class="mini" onclick="addExtract()">+ Ajouter une reprise d'air</button></div>
@@ -101,7 +101,7 @@ input[type=range]{padding:0}
     <div id="progress" class="note"></div>
     <div id="vues">
       <div class="pane" id="pane3d"><h3>Vue 3D du flux d'air (glisser = orbite, molette = zoom)</h3><canvas id="view3d"></canvas></div>
-      <div class="pane" id="pane2d"><h3>Heat map du taux de balayage (%) — vue de dessus</h3><canvas id="heatmap" width="960" height="700"></canvas></div>
+      <div class="pane" id="pane2d"><h3>Heat map du taux de balayage (%) — vue de dessus : glisser-déposer les bouches, reprises et mobilier à la souris</h3><canvas id="heatmap" width="960" height="700"></canvas></div>
     </div>
   </section>
 </main>
@@ -197,7 +197,7 @@ function renderSupplies(){
   const r=state.room;
   $('#soufflage').innerHTML=state.supplies.map((b,i)=>{
     const dimLbl=b.type==='rond'?'Ø (m)':(b.type==='carre'||b.type==='grille')?'côté (m)':'longueur (m)';
-    const fente=b.type==='fente'?`<label>ép. fente (m)<input type="number" step="0.005" min="0.005" value="${b.dim2||0.02}" oninput="updSupply(${i},'dim2',this.value)"></label>`:'';
+    const fente=b.type==='fente'?`<label>ép. fente (mm)<input type="number" step="1" min="1" value="${Math.round((b.dim2||0.02)*1000)}" oninput="updSupply(${i},'dim2mm',this.value)"></label>`:'';
     const pl=(!b.montage||b.montage==='plafond')?'':'disabled';
     return `<div class="row"><span class="tag">Soufflage ${i+1}</span>
       <label>montage<select onchange="updSupply(${i},'montage',this.value)">${Object.keys(MONT_LABEL).map(t=>`<option value="${t}" ${(b.montage||'plafond')===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
@@ -217,7 +217,7 @@ function renderExtracts(){
   const r=state.room;
   $('#extraction').innerHTML=state.extracts.map((e,i)=>{
     const dimLbl=e.type==='rond'?'Ø (m)':(e.type==='carre'||e.type==='grille')?'côté (m)':'longueur (m)';
-    const fente=e.type==='fente'?`<label>ép. fente (m)<input type="number" step="0.005" min="0.005" value="${e.dim2||0.02}" oninput="updExtract(${i},'dim2',this.value)"></label>`:'';
+    const fente=e.type==='fente'?`<label>ép. fente (mm)<input type="number" step="1" min="1" value="${Math.round((e.dim2||0.02)*1000)}" oninput="updExtract(${i},'dim2mm',this.value)"></label>`:'';
     return `<div class="row"><span class="tag">Reprise ${i+1}</span>
     <label>montage<select onchange="updExtract(${i},'montage',this.value)">${Object.keys(MONT_LABEL).map(t=>`<option value="${t}" ${(e.montage||'plafond')===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
     <label>forme<select onchange="updExtract(${i},'type',this.value)">${Object.keys(TYPE_LABEL).map(t=>`<option value="${t}" ${(e.type||'grille')===t?'selected':''}>${TYPE_LABEL[t]}</option>`).join('')}</select></label>
@@ -252,10 +252,10 @@ function renderSimParams(){
     <label class="f"><span>Vitesse de lecture : <b id="lblVit">${s.vitesse}</b>×</span><input type="range" min="1" max="500" step="1" value="${s.vitesse}" oninput="updSim('vitesse',this.value);$('#lblVit').textContent=this.value.replace('.',',')"></label>`;
 }
 function updRoom(k,v){const x=parseFloat(v);if(!isNaN(x))state.room[k]=x;renderExtracts();}
-function updSupply(i,k,v){const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;}
+function updSupply(i,k,v){const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();return;}if(k==='dim2mm'){const x=parseFloat(v);b.dim2=isNaN(x)?null:x/1000;return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;}
 function delSupply(i){state.supplies.splice(i,1);renderSupplies();}
 function addSupply(){state.supplies.push({id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:state.room.L/2,y:state.room.l/2,z:state.room.H,q:60,dir:'vert',azi:0});renderSupplies();}
-function updExtract(i,k,v){const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;}
+function updExtract(i,k,v){const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();return;}if(k==='dim2mm'){const x=parseFloat(v);e.dim2=isNaN(x)?null:x/1000;return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;}
 function delExtract(i){state.extracts.splice(i,1);renderExtracts();}
 function addExtract(){state.extracts.push({id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:state.room.l-0.3,z:state.room.H,q:0});renderExtracts();}
 function updMeuble(i,k,v){const m=state.mobilier[i];if(k==='nom'){m.nom=v;return;}const x=parseFloat(v);if(!isNaN(x))m[k]=x;}
@@ -513,6 +513,7 @@ function drawHeatmap(){
   const aw=W-legW-pad*2,ah=H-pad*2;
   const sc=Math.min(aw/r.L,ah/r.l);
   const ox=pad+(aw-r.L*sc)/2,oy=pad+(ah-r.l*sc)/2;
+  window.__hm={ox,oy,sc};window.__hits=[];
   const P=(px,py)=>[ox+px*sc,oy+py*sc];
   let nx,ny,csx,csy,pct;
   if(sim&&sim.results){nx=sim.results.nx;ny=sim.results.ny;csx=sim.results.csx;csy=sim.results.csy;pct=sim.results.pct;}
@@ -539,22 +540,25 @@ function drawHeatmap(){
     x.fillStyle=PALETTE[i%PALETTE.length]+'55';x.fillRect(a,b,a2-a,b2-b);
     x.strokeStyle=PALETTE[i%PALETTE.length];x.lineWidth=1.5;x.strokeRect(a,b,a2-a,b2-b);
     x.fillStyle='#fff';x.font='10px sans-serif';x.fillText(m.nom,a+3,b+12);
+    window.__hits.push({k:'m',i,x:a,y:b,w:a2-a,h:b2-b});
   });
-  state.supplies.forEach(b=>{
-    const pp=posOf(b,r);const[a,bb]=P(pp[0],pp[1]);const rad=Math.max(4,b.dim*sc/2);
+  state.supplies.forEach((b,i)=>{
+    const pp=posOf(b,r);const[a,bb]=P(pp[0],pp[1]);const rad=Math.max(4,Math.min(b.dim,0.5)*sc/2);
     x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;
     x.beginPath();
     if(b.type==='rond')x.arc(a,bb,rad,0,7);
-    else if(b.type==='carre')x.rect(a-rad,bb-rad,rad*2,rad*2);
-    else x.rect(a-b.dim*sc/2,bb-rad/2,b.dim*sc,rad);
+    else if(b.type==='carre'||b.type==='grille')x.rect(a-rad,bb-rad,rad*2,rad*2);
+    else{const len=Math.min(b.dim,Math.max(r.L,r.l))*sc;x.rect(a-len/2,bb-3,len,6);}
     x.fill();x.stroke();
-    x.fillStyle='#d1fae5';x.font='bold 10px sans-serif';x.fillText(b.q+' m³/h',a+rad+3,bb+3);
+    x.fillStyle='#d1fae5';x.font='bold 10px sans-serif';x.fillText(b.q+' m³/h',a+Math.max(rad,12)+3,bb+3);
+    window.__hits.push({k:'s',i,x:a,y:bb,r:15});
   });
-  state.extracts.forEach(e=>{
+  state.extracts.forEach((e,i)=>{
     const pp=posOf(e,r);const[a,b]=P(pp[0],pp[1]);
     x.strokeStyle='#f87171';x.lineWidth=2.5;
     x.beginPath();x.moveTo(a-6,b-6);x.lineTo(a+6,b+6);x.moveTo(a+6,b-6);x.lineTo(a-6,b+6);x.stroke();
-    x.fillStyle='#fecaca';x.font='10px sans-serif';x.fillText('extraction',a+8,b-6);
+    x.fillStyle='#fecaca';x.font='10px sans-serif';x.fillText('reprise',a+8,b-6);
+    window.__hits.push({k:'e',i,x:a,y:b,r:15});
   });
   const lx=W-legW+8,ly=pad,lh=ah;
   const gr=x.createLinearGradient(0,ly,0,ly+lh);
@@ -580,7 +584,7 @@ function telechargerHeatmap(){
   a.download='heatmap-balayage-ventilation.png';
   a.click();
 }
-const view={theta:0.8,phi:0.9,dist:14};
+const view={theta:0.8,phi:0.95,dist:14};
 function camBasis(){
   const r=state.room;
   const t=[r.L/2,r.l/2,r.H/2];
@@ -662,12 +666,13 @@ function render3D(){
   state.supplies.forEach(b=>{
     const p=proj(posOf(b,r));
     if(!p)return;
-    const rad=Math.max(3,f*Math.max(b.dim,0.1)/(2*p[2]));
+    const sz=Math.min(b.dim||0.2,0.8);
+    const rad=Math.max(3,f*sz/(2*p[2]));
     items.push({d:p[2],draw:()=>{
       x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;x.beginPath();
       if(b.type==='rond')x.arc(p[0],p[1],rad,0,7);
-      else if(b.type==='carre')x.rect(p[0]-rad,p[1]-rad,rad*2,rad*2);
-      else{x.save();x.translate(p[0],p[1]);x.rotate((b.azi||0)*Math.PI/180);x.rect(-rad*4,-rad/2,rad*8,rad);x.restore();}
+      else if(b.type==='carre'||b.type==='grille')x.rect(p[0]-rad,p[1]-rad,rad*2,rad*2);
+      else{const len=Math.min(b.dim,Math.max(r.L,r.l))*f/p[2];const th=Math.max(3,rad*0.7);x.save();x.translate(p[0],p[1]);x.rotate((b.azi||0)*Math.PI/180);x.rect(-len/2,-th/2,len,th);x.restore();}
       x.fill();x.stroke();
     }});
   });
@@ -710,8 +715,19 @@ function render3D(){
   }
   items.sort((a,b)=>b.d-a.d);
   for(const it of items)it.draw();
+  const bx=80,by=h-80;
+  const axes=[[1,0,0,'X','#f87171'],[0,1,0,'Y','#34d399'],[0,0,1,'Z (haut)','#60a5fa']];
+  for(const[axx,ayy,azz,lbl,col]of axes){
+    const p0=proj(B.t),p1=proj([B.t[0]+axx*1.2,B.t[1]+ayy*1.2,B.t[2]+azz*1.2]);
+    if(!p0||!p1)continue;
+    let dx=p1[0]-p0[0],dy=p1[1]-p0[1];const dl=Math.hypot(dx,dy)||1;dx/=dl;dy/=dl;
+    x.strokeStyle=col;x.fillStyle=col;x.lineWidth=2;
+    x.beginPath();x.moveTo(bx,by);x.lineTo(bx+dx*38,by+dy*38);x.stroke();
+    x.beginPath();x.arc(bx+dx*38,by+dy*38,3.5,0,7);x.fill();
+    x.font='11px sans-serif';x.fillText(lbl,bx+dx*46-12,by+dy*46+4);
+  }
   x.fillStyle='#9fb0c3';x.font='11px sans-serif';
-  const legend=sim&&sim.done?'particules colorées par âge de l\'air (bleu = neuf, rouge = vieux) + lignes de courant':'bouches vertes = insufflation, croix rouges = extraction — lancez la simulation';
+  const legend=sim&&sim.done?'particules colorées par âge de l\'air (bleu = neuf, rouge = vieux) + lignes de courant — rotation autour de l\'axe vertical uniquement, molette = zoom':'bouches vertes = soufflage, croix rouges = reprise — rotation autour de l\'axe vertical uniquement — lancez la simulation';
   x.fillText(legend,10,h-10);
 }
 (function initControls(){
@@ -721,7 +737,7 @@ function render3D(){
   window.addEventListener('mouseup',()=>drag=false);
   window.addEventListener('mousemove',e=>{
     if(!drag)return;
-    view.theta+=(e.clientX-lx)*0.008;view.phi=clamp(view.phi+(e.clientY-ly)*0.008,0.05,1.55);
+    view.theta+=(e.clientX-lx)*0.008;
     lx=e.clientX;ly=e.clientY;
     if(!sim||!sim.running)render3D();
   });
@@ -731,6 +747,31 @@ function render3D(){
     if(!sim||!sim.running)render3D();
   },{passive:false});
   window.addEventListener('resize',()=>{render3D();drawHeatmap();});
+})();
+(function initDragPlan(){
+  const hm=$('#heatmap');
+  let drag=null;
+  function toCanvas(e){const rc=hm.getBoundingClientRect();return[(e.clientX-rc.left)*hm.width/rc.width,(e.clientY-rc.top)*hm.height/rc.height];}
+  function hitAt(mx,my){const hits=window.__hits||[];for(let k=hits.length-1;k>=0;k--){const h=hits[k];if(h.r?Math.hypot(mx-h.x,my-h.y)<=h.r:(mx>=h.x&&mx<=h.x+h.w&&my>=h.y&&my<=h.y+h.h))return h;}return null;}
+  hm.addEventListener('mousedown',e=>{
+    if(sim&&sim.running)return;
+    const c=toCanvas(e);const h=hitAt(c[0],c[1]);
+    if(h){drag=h;hm.style.cursor='grabbing';e.preventDefault();}
+  });
+  window.addEventListener('mousemove',e=>{
+    const c=toCanvas(e);
+    if(!drag){hm.style.cursor=hitAt(c[0],c[1])?'grab':'';return;}
+    const g=window.__hm;if(!g)return;
+    const rr=state.room;
+    const rx=clamp((c[0]-g.ox)/g.sc,0,rr.L),ry=clamp((c[1]-g.oy)/g.sc,0,rr.l);
+    if(drag.k==='s'){const b=state.supplies[drag.i];b.x=rx;b.y=ry;}
+    else if(drag.k==='e'){const el=state.extracts[drag.i];el.x=rx;el.y=ry;}
+    else{const m=state.mobilier[drag.i];m.x=rx;m.y=ry;}
+    drawHeatmap();render3D();
+  });
+  window.addEventListener('mouseup',()=>{
+    if(drag){drag=null;hm.style.cursor='';renderSupplies();renderExtracts();renderMobilier();}
+  });
 })();
 function genererRapport(){
   if(!sim||!sim.results)return;

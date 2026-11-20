@@ -100,7 +100,7 @@ input[type=range]{padding:0}
     </div>
     <div id="progress" class="note"></div>
     <div id="vues">
-      <div class="pane" id="pane3d"><h3>Vue 3D du flux d'air (glisser = orbite, molette = zoom)</h3><canvas id="view3d"></canvas></div>
+      <div class="pane" id="pane3d"><h3>Vue 3D du flux d'air (glisser horizontalement = tourner autour de la pièce, molette = zoom ; X à droite, Z en haut comme en vue 2D)</h3><canvas id="view3d"></canvas></div>
       <div class="pane" id="pane2d"><h3>Heat map du taux de balayage (%) — vue de dessus : glisser-déposer les bouches, reprises et mobilier à la souris</h3><canvas id="heatmap" width="960" height="700"></canvas></div>
     </div>
   </section>
@@ -514,7 +514,7 @@ function drawHeatmap(){
   const sc=Math.min(aw/r.L,ah/r.l);
   const ox=pad+(aw-r.L*sc)/2,oy=pad+(ah-r.l*sc)/2;
   window.__hm={ox,oy,sc};window.__hits=[];
-  const P=(px,py)=>[ox+px*sc,oy+py*sc];
+  const P=(px,py)=>[ox+px*sc,oy+(r.l-py)*sc];
   let nx,ny,csx,csy,pct;
   if(sim&&sim.results){nx=sim.results.nx;ny=sim.results.ny;csx=sim.results.csx;csy=sim.results.csy;pct=sim.results.pct;}
   else{nx=Math.max(6,Math.round(r.L/0.25));ny=Math.max(6,Math.round(r.l/0.25));csx=r.L/nx;csy=r.l/ny;pct=null;}
@@ -531,6 +531,9 @@ function drawHeatmap(){
   x.strokeStyle='#e8eef6';x.lineWidth=2.5;
   const[c0,c1]=P(0,0),[c2,c3]=P(r.L,r.l);
   x.strokeRect(c0,c1,c2-c0,c3-c1);
+  x.fillStyle='#9fb0c3';x.font='bold 11px sans-serif';
+  x.fillText('X →',c2-34,(c1+c3)/2+4);
+  x.fillText('Y ↑',(c0+c2)/2-6,c1+14);
   x.strokeStyle='#475569';x.lineWidth=1;x.setLineDash([4,4]);
   for(let gx=0.5;gx<r.L;gx+=0.5){const[a,b]=P(gx,0),[a2,b2]=P(gx,r.l);x.beginPath();x.moveTo(a,b);x.lineTo(a2,b2);x.stroke();}
   for(let gy=0.5;gy<r.l;gy+=0.5){const[a,b]=P(0,gy),[a2,b2]=P(r.L,gy);x.beginPath();x.moveTo(a,b);x.lineTo(a2,b2);x.stroke();}
@@ -584,7 +587,7 @@ function telechargerHeatmap(){
   a.download='heatmap-balayage-ventilation.png';
   a.click();
 }
-const view={theta:0.8,phi:0.95,dist:14};
+const view={theta:Math.PI,phi:0.5,dist:14};
 function camBasis(){
   const r=state.room;
   const t=[r.L/2,r.l/2,r.H/2];
@@ -592,8 +595,8 @@ function camBasis(){
   const cam=[t[0]+view.dist*cp*st,t[1]+view.dist*cp*ct,t[2]+view.dist*sp];
   const fwd=[t[0]-cam[0],t[1]-cam[1],t[2]-cam[2]];
   const fl=Math.hypot(...fwd);fwd[0]/=fl;fwd[1]/=fl;fwd[2]/=fl;
-  let right=[-fwd[2],0,fwd[0]];const rl=Math.hypot(...right)||1;right[0]/=rl;right[1]/=rl;right[2]/=rl;
-  if(rl<1e-6)right=[1,0,0];
+  let right=[fwd[1],-fwd[0],0];const rl=Math.hypot(right[0],right[1]);
+  if(rl<1e-6)right=[1,0,0];else{right[0]/=rl;right[1]/=rl;}
   const up=[right[1]*fwd[2]-right[2]*fwd[1],right[2]*fwd[0]-right[0]*fwd[2],right[0]*fwd[1]-right[1]*fwd[0]];
   return{cam,right,up,fwd,t};
 }
@@ -763,7 +766,7 @@ function render3D(){
     if(!drag){hm.style.cursor=hitAt(c[0],c[1])?'grab':'';return;}
     const g=window.__hm;if(!g)return;
     const rr=state.room;
-    const rx=clamp((c[0]-g.ox)/g.sc,0,rr.L),ry=clamp((c[1]-g.oy)/g.sc,0,rr.l);
+    const rx=clamp((c[0]-g.ox)/g.sc,0,rr.L),ry=clamp(rr.l-(c[1]-g.oy)/g.sc,0,rr.l);
     if(drag.k==='s'){const b=state.supplies[drag.i];b.x=rx;b.y=ry;}
     else if(drag.k==='e'){const el=state.extracts[drag.i];el.x=rx;el.y=ry;}
     else{const m=state.mobilier[drag.i];m.x=rx;m.y=ry;}

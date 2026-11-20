@@ -533,10 +533,10 @@ function updateStats(){
   }
   $('#stats').innerHTML=h;
 }
-function sweepColor(p){
+function sweepColor(p,lo,hi){
   if(p==null||isNaN(p))return'#6b7280';
-  const t=clamp(p/150,0,1);
-  return`hsl(${225-225*t},90%,50%)`;
+  const t=clamp(Math.log(p/lo)/Math.log(hi/lo),0,1);
+  return`hsl(${225-225*t},90%,${45+10*t}%)`;
 }
 function speedColor(v){const t=clamp(v/6,0,1);return`hsl(${220-220*t},85%,58%)`;}
 function ageColor(a,tau){const t=clamp(a/(2*tau),0,1);return`hsl(${210-210*t},85%,58%)`;}
@@ -557,15 +557,28 @@ function drawHeatmap(){
   const z=state.sim.tranche;
   const k=clamp(Math.floor(z/csz),0,nz-1);
   const seuil=sim&&!sim.done?0.8:1.5;
+  const cells=new Array(nx*ny).fill(null);
   for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
     let v=null;
     if(sim){
       const idx=i+nx*(j+ny*k);
-      if(pct)v=pct[idx];
+      if(pct){const c=pct[idx];if(c!=null&&!isNaN(c))v=c;}
       else{const ct=sim.cellTime[idx];if(ct>seuil)v=100*sim.tauN/(sim.cellAge[idx]/ct);}
     }
+    cells[j*nx+i]=v;
+  }
+  const vals=cells.filter(v=>v!=null&&!isNaN(v)).sort((a,b)=>a-b);
+  let lo=25,hi=400;
+  if(vals.length){
+    const q=f=>vals[clamp(Math.floor(f*vals.length),0,vals.length-1)];
+    lo=Math.min(q(0.05),25);
+    hi=Math.max(q(0.95),100,lo*4);
+  }
+  window.__scale={lo,hi};
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const v=cells[j*nx+i];
     const[a,b]=P(i*csx,(j+1)*csy);
-    x.fillStyle=sweepColor(v);
+    x.fillStyle=sweepColor(v,lo,hi);
     x.fillRect(a,b,csx*sc-0.5,csy*sc-0.5);
   }
   x.strokeStyle='#e8eef6';x.lineWidth=2.5;
@@ -619,18 +632,24 @@ function drawHeatmap(){
   });
   const lx=W-legW+8,ly=pad,lh=ah;
   const gr=x.createLinearGradient(0,ly,0,ly+lh);
-  for(let t=0;t<=1.001;t+=0.05){gr.addColorStop(t,sweepColor(150*t));}
+  for(let t=0;t<=1.001;t+=0.05){gr.addColorStop(t,sweepColor(hi*Math.pow(lo/hi,t),lo,hi));}
   x.fillStyle=gr;x.fillRect(lx,ly,22,lh);
   x.strokeStyle='#64748b';x.lineWidth=1;x.strokeRect(lx,ly,22,lh);
   x.fillStyle='#e8eef6';x.font='11px sans-serif';
-  [0,25,50,75,100,125,150].forEach(v=>{
-    const yy=ly+lh-(clamp(v/150,0,1))*lh;
-    x.fillText(v+' %',lx+28,yy+4);
+  const fmtP=v=>fmt(v>=999.5?999:v,0)+' %';
+  const lg=Math.log,rel=v=>clamp(lg(v/lo)/lg(hi/lo),0,1);
+  [hi,Math.sqrt(lo*hi),lo].forEach(v=>{
+    const yy=ly+lh-rel(v)*lh;
+    x.fillText(fmtP(v),lx+28,yy+4);
     x.strokeStyle='#64748b';x.beginPath();x.moveTo(lx,yy);x.lineTo(lx+22,yy);x.stroke();
   });
-  x.fillText('≥150 %',lx+28,ly+4);
+  if(lo<100&&hi>100){
+    const yy=ly+lh-rel(100)*lh;
+    x.strokeStyle='#fff';x.beginPath();x.moveTo(lx,yy);x.lineTo(lx+22,yy);x.stroke();
+    x.fillText('100 % (τ)',lx+28,yy-6);
+  }
   x.fillStyle='#9fb0c3';x.font='11px sans-serif';
-  x.fillText('Taux de balayage local = τnominal / âge moyen de l’air × 100 %',pad,H-8);
+  x.fillText('Taux de balayage local = τnominal / âge moyen de l’air × 100 % — échelle adaptée à la tranche (log), 100 % = mélange parfait',pad,H-8);
   x.fillText(`Tranche horizontale z = ${fmt(z,1)} m — gris : zone non balayée (donnée insuffisante)`,pad,pad-2+12);
   x.fillStyle='#34d399';x.fillText('■ insufflation',W-legW-100,H-8);
   x.fillStyle='#f87171';x.fillText('✕ extraction',W-legW-30,H-8);

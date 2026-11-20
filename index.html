@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulateur de balayage de ventilation</title>
+<style>
+:root{
+  --bg:#0f1620; --panel:#182230; --panel2:#1f2b3d; --bord:#2c3a4f;
+  --txt:#e8eef6; --mut:#9fb0c3; --acc:#38bdf8; --acc2:#34d399; --warn:#fbbf24; --danger:#f87171;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+header{background:linear-gradient(90deg,#0b3b5c,#0f5e46);padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;font-weight:600}
+header p{margin:0;color:#cfe6ef;font-size:12px}
+main{display:grid;grid-template-columns:400px 1fr;gap:10px;padding:10px;height:calc(100vh - 54px)}
+aside{background:var(--panel);border:1px solid var(--bord);border-radius:10px;overflow-y:auto;padding:12px}
+section#visu{display:flex;flex-direction:column;gap:8px;min-width:0}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--acc);margin:14px 0 6px;border-bottom:1px solid var(--bord);padding-bottom:4px}
+h2:first-child{margin-top:0}
+label.f{display:flex;align-items:center;gap:6px;margin:4px 0;color:var(--mut);font-size:12.5px}
+label.f span{width:118px;flex:none}
+input,select{background:var(--panel2);border:1px solid var(--bord);color:var(--txt);border-radius:6px;padding:4px 6px;font-size:12.5px;width:100%}
+input:focus,select:focus{outline:1px solid var(--acc)}
+.row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;background:var(--panel2);border:1px solid var(--bord);border-radius:8px;padding:6px;margin:6px 0}
+.row label{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--mut)}
+.row label input,.row label select{width:64px}
+.row .tag{font-size:10.5px;background:#0b2237;color:var(--acc);border-radius:5px;padding:2px 6px;white-space:nowrap}
+button{cursor:pointer;border-radius:7px;border:1px solid var(--bord);background:var(--panel2);color:var(--txt);padding:6px 10px;font-size:12.5px}
+button:hover{border-color:var(--acc)}
+button.primary{background:#0369a1;border-color:#0ea5e9;font-weight:600}
+button.primary:hover{background:#0284c7}
+button.green{background:#065f46;border-color:#34d399}
+button.green:hover{background:#047857}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.mini{padding:2px 7px;font-size:11px}
+.btnline{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+#stats{display:flex;gap:8px;flex-wrap:wrap}
+.stat{background:var(--panel);border:1px solid var(--bord);border-radius:8px;padding:6px 10px;min-width:120px}
+.stat b{display:block;font-size:15px;color:var(--acc2)}
+.stat span{font-size:10.5px;color:var(--mut)}
+#tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#tabs button.on{background:#0369a1;border-color:#0ea5e9}
+#vues{flex:1;display:flex;gap:10px;min-height:0}
+#vues .pane{flex:1;background:var(--panel);border:1px solid var(--bord);border-radius:10px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#vues canvas{max-width:100%;max-height:100%}
+.pane h3{position:absolute;top:8px;left:10px;margin:0;font-size:12px;color:var(--mut);font-weight:600;z-index:2}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:flex;flex-direction:column}
+#overlay .bar{display:flex;gap:8px;padding:8px 12px;background:var(--panel);align-items:center}
+#overlay iframe{flex:1;border:0;background:#fff}
+.note{font-size:11px;color:var(--mut);line-height:1.5}
+.warn{color:var(--warn);font-size:11.5px}
+input[type=range]{padding:0}
+@media (max-width:1000px){main{grid-template-columns:1fr;height:auto}section#visu{height:80vh}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🌬️ Simulateur de balayage de ventilation</h1>
+  <p>Fichier unique autonome — renseignez la pièce, les bouches, le mobilier, lancez la simulation, visualisez le flux en 3D et éditez un rapport avec heat map du taux de balayage.</p>
+</header>
+<main>
+  <aside id="panneau">
+    <h2>1. Pièce &amp; conditions</h2>
+    <div id="piece"></div>
+    <h2>2. Bouches de soufflage (insufflation)</h2>
+    <div id="soufflage"></div>
+    <div class="btnline"><button class="mini" onclick="addSupply()">+ Ajouter une bouche de soufflage</button></div>
+    <p class="note">Plafond : X, Y = position (Z ignoré), direction réglable. Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur, soufflage horizontal vers l'intérieur de la pièce.</p>
+    <h2>3. Reprises d'air (extraction)</h2>
+    <div id="extraction"></div>
+    <div class="btnline"><button class="mini" onclick="addExtract()">+ Ajouter une reprise d'air</button></div>
+    <h2>4. Mobilier &amp; obstacles</h2>
+    <div id="mobilier"></div>
+    <div class="btnline"><button class="mini" onclick="addMeuble()">+ Ajouter un élément</button></div>
+    <h2>5. Simulation</h2>
+    <div id="simparams"></div>
+    <div class="btnline">
+      <button class="primary" id="btnLancer" onclick="lancer()">▶ Lancer la simulation</button>
+      <button id="btnPause" onclick="pauseReprendre()" disabled>⏸ Pause</button>
+      <button onclick="reinitSim()">↺ Réinitialiser</button>
+    </div>
+    <div class="btnline">
+      <button class="green" id="btnRapport" onclick="genererRapport()" disabled>📄 Générer le rapport</button>
+      <button id="btnPng" onclick="telechargerHeatmap()" disabled>🖼 Heat map (PNG)</button>
+    </div>
+    <h2>Méthodologie</h2>
+    <p class="note">Modèle lagrangien simplifié : particules d'air émises à t = 0 aux bouches d'insufflation (pas de temps adaptatif 0,05–0,12 s) et suivies jusqu'à l'extraction. Jets avec entraînement (décroissance de la vitesse selon la distance), diffusion turbulente, flottabilité si écart de température soufflage/ambiance, rebonds sur parois et obstacles, aspiration aux extractions, et dérive de retour d'air vers l'extraction (circulation induite par l'entraînement des jets). L'âge de l'air est cumulé dans une grille volumique (~0,25 m) sur toute la trajectoire : l'âge moyen par cellule estime l'état permanent, et le <b>taux de balayage local</b> vaut τ<sub>nominal</sub> / âge moyen local × 100 %, avec τ<sub>nominal</sub> = Volume / Débit total. Utilisez la durée automatique (≈ 4 × τ<sub>nominal</sub>, max 1 h). Outil d'aide au dimensionnement — ne remplace pas une étude CFD réglementaire.</p>
+  </aside>
+  <section id="visu">
+    <div id="stats"></div>
+    <div id="tabs">
+      <button data-v="both" class="on" onclick="setView('both')">3D + Heat map</button>
+      <button data-v="3d" onclick="setView('3d')">Vue 3D</button>
+      <button data-v="2d" onclick="setView('2d')">Heat map 2D</button>
+      <label class="f" style="margin:0"><span style="width:auto">Tranche heat map z = <b id="lblTranche">1,1</b> m</span>
+      <input type="range" id="tranche" min="0.2" max="2.4" step="0.1" value="1.1" style="width:160px" oninput="changerTranche(this.value)"></label>
+    </div>
+    <div id="progress" class="note"></div>
+    <div id="vues">
+      <div class="pane" id="pane3d"><h3>Vue 3D du flux d'air (glisser = orbite, molette = zoom)</h3><canvas id="view3d"></canvas></div>
+      <div class="pane" id="pane2d"><h3>Heat map du taux de balayage (%) — vue de dessus</h3><canvas id="heatmap" width="960" height="700"></canvas></div>
+    </div>
+  </section>
+</main>
+<div id="overlay" hidden>
+  <div class="bar">
+    <b>Rapport de simulation</b>
+    <button class="primary" onclick="imprimerRapport()">🖨 Imprimer / PDF</button>
+    <button class="green" onclick="telechargerRapport()">💾 Télécharger le rapport (HTML)</button>
+    <button onclick="fermerRapport()">✕ Fermer</button>
+  </div>
+  <iframe id="repFrame" title="Rapport"></iframe>
+</div>
+<script>
+let uid=1;
+const state={
+  room:{L:6,l:4,H:2.6,Tamb:20,Tsouf:16},
+  supplies:[
+    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:2,y:2,z:2.6,q:90,dir:'vert',azi:0},
+    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:4,y:2,z:2.6,q:90,dir:'vert',azi:0}
+  ],
+  extracts:[{id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:0.3,z:2.6,q:0}],
+  mobilier:[
+    {id:uid++,preset:'Table',nom:'Table 1',x:2,y:1.2,z:0,L:1.6,l:0.8,H:0.75},
+    {id:uid++,preset:'Table',nom:'Table 2',x:4,y:1.2,z:0,L:1.6,l:0.8,H:0.75}
+  ],
+  sim:{duree:300,autoDuree:true,nb:2500,vitesse:100,tranche:1.1}
+};
+let sim=null;
+const $=s=>document.querySelector(s);
+const PRESETS={
+  'Table':{L:1.6,l:0.8,H:0.75},'Bureau':{L:1.4,l:0.7,H:0.75},'Chaise':{L:0.45,l:0.45,H:0.9},
+  'Armoire':{L:1.2,l:0.6,H:2.0},'Étagère':{L:0.9,l:0.3,H:1.8},'Cloison':{L:2.0,l:0.1,H:2.5},
+  'Équipement':{L:1.0,l:0.8,H:1.2},'Personne (debout)':{L:0.4,l:0.3,H:1.7},'Personnalisé':null
+};
+const PALETTE=['#8b5cf6','#f59e0b','#ec4899','#10b981','#f97316','#06b6d4','#a3e635','#e879f9'];
+const TYPE_LABEL={rond:'Ronde',carre:'Carrée',fente:'À fente',grille:'Grille'};
+const MONT_LABEL={plafond:'Plafond',murX0:'Mur x=0',murX1:'Mur x=L',murY0:'Mur y=0',murY1:'Mur y=l'};
+const DIR_LABEL={vert:'▼ verticale',a30:'↘ inclinée 30°',a45:'↘ inclinée 45°',a60:'↘ inclinée 60°'};
+function rnd(a,b){return a+Math.random()*(b-a);}
+let spareG=null;
+function gauss(){
+  if(spareG!=null){const v=spareG;spareG=null;return v;}
+  let u=0,v=0,s=0;
+  do{u=Math.random()*2-1;v=Math.random()*2-1;s=u*u+v*v;}while(s>=1||s===0);
+  const m=Math.sqrt(-2*Math.log(s)/s);
+  spareG=v*m;
+  return u*m;
+}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function ru(){return (Math.random()*2-1)*1.732;}
+function fmt(x,d){if(x==null||isNaN(x))return'—';d=d==null?1:d;return x.toFixed(d).replace('.',',');}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function effAire(b){
+  if(b.type==='rond')return Math.PI*b.dim*b.dim/4;
+  if(b.type==='carre'||b.type==='grille')return b.dim*b.dim;
+  const lf=b.dim2&&b.dim2>0?b.dim2:0.02;
+  return b.dim*lf;
+}
+function v0Of(b){return (b.q/3600)/(effAire(b)*0.65);}
+function dirVec(b){
+  const a=b.dir==='vert'?0:b.dir==='a30'?30:b.dir==='a45'?45:60;
+  const az=(b.azi||0)*Math.PI/180, r=a*Math.PI/180;
+  return [Math.sin(r)*Math.cos(az),Math.sin(r)*Math.sin(az),-Math.cos(r)];
+}
+function posOf(m,r){
+  const x=clamp(m.x||0,0,r.L),y=clamp(m.y||0,0,r.l),z=clamp(m.z==null?r.H:m.z,0,r.H);
+  switch(m.montage){
+    case 'murX0':return[0,y,z];
+    case 'murX1':return[r.L,y,z];
+    case 'murY0':return[x,0,z];
+    case 'murY1':return[x,r.l,z];
+    default:return[x,y,r.H];
+  }
+}
+function dirOf(b,r){
+  switch(b.montage){
+    case 'murX0':return[1,0,0];
+    case 'murX1':return[-1,0,0];
+    case 'murY0':return[0,1,0];
+    case 'murY1':return[0,-1,0];
+    default:return dirVec(b);
+  }
+}
+function renderPiece(){
+  const r=state.room;
+  const t=$('#tranche');
+  if(t){t.max=Math.max(0.3,r.H-0.2);if(state.sim.tranche>r.H-0.2)state.sim.tranche=r.H-0.2;t.value=state.sim.tranche;$('#lblTranche').textContent=fmt(state.sim.tranche,1);}
+  $('#piece').innerHTML=['L','l','H'].map(k=>`<label class="f"><span>Dimension ${k} (m)</span><input type="number" step="0.1" min="0.5" value="${r[k]}" oninput="updRoom('${k}',this.value)"></label>`).join('')+
+  `<label class="f"><span>Température ambiante (°C)</span><input type="number" step="0.5" value="${r.Tamb}" oninput="updRoom('Tamb',this.value)"></label>
+   <label class="f"><span>Température de soufflage (°C)</span><input type="number" step="0.5" value="${r.Tsouf}" oninput="updRoom('Tsouf',this.value)"></label>`;
+}
+function renderSupplies(){
+  const r=state.room;
+  $('#soufflage').innerHTML=state.supplies.map((b,i)=>{
+    const dimLbl=b.type==='rond'?'Ø (m)':(b.type==='carre'||b.type==='grille')?'côté (m)':'longueur (m)';
+    const fente=b.type==='fente'?`<label>ép. fente (m)<input type="number" step="0.005" min="0.005" value="${b.dim2||0.02}" oninput="updSupply(${i},'dim2',this.value)"></label>`:'';
+    const pl=(!b.montage||b.montage==='plafond')?'':'disabled';
+    return `<div class="row"><span class="tag">Soufflage ${i+1}</span>
+      <label>montage<select onchange="updSupply(${i},'montage',this.value)">${Object.keys(MONT_LABEL).map(t=>`<option value="${t}" ${(b.montage||'plafond')===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
+      <label>forme<select onchange="updSupply(${i},'type',this.value)">${Object.keys(TYPE_LABEL).map(t=>`<option value="${t}" ${b.type===t?'selected':''}>${TYPE_LABEL[t]}</option>`).join('')}</select></label>
+      <label>${dimLbl}<input type="number" step="0.01" min="0.01" value="${b.dim}" oninput="updSupply(${i},'dim',this.value)"></label>
+      ${fente}
+      <label>X (m)<input type="number" step="0.1" value="${b.x}" oninput="updSupply(${i},'x',this.value)"></label>
+      <label>Y (m)<input type="number" step="0.1" value="${b.y}" oninput="updSupply(${i},'y',this.value)"></label>
+      <label>Z (m)<input type="number" step="0.1" value="${b.z==null?r.H:b.z}" oninput="updSupply(${i},'z',this.value)"></label>
+      <label>Q (m³/h)<input type="number" step="5" min="1" value="${b.q}" oninput="updSupply(${i},'q',this.value)"></label>
+      <label>direction<select ${pl} onchange="updSupply(${i},'dir',this.value)">${Object.keys(DIR_LABEL).map(t=>`<option value="${t}" ${b.dir===t?'selected':''}>${DIR_LABEL[t]}</option>`).join('')}</select></label>
+      <label>azimut (°)<input ${pl} type="number" step="15" min="0" max="360" value="${b.azi||0}" oninput="updSupply(${i},'azi',this.value)"></label>
+      <button class="mini" onclick="delSupply(${i})">✕</button></div>`;
+  }).join('');
+}
+function renderExtracts(){
+  const r=state.room;
+  $('#extraction').innerHTML=state.extracts.map((e,i)=>{
+    const dimLbl=e.type==='rond'?'Ø (m)':(e.type==='carre'||e.type==='grille')?'côté (m)':'longueur (m)';
+    const fente=e.type==='fente'?`<label>ép. fente (m)<input type="number" step="0.005" min="0.005" value="${e.dim2||0.02}" oninput="updExtract(${i},'dim2',this.value)"></label>`:'';
+    return `<div class="row"><span class="tag">Reprise ${i+1}</span>
+    <label>montage<select onchange="updExtract(${i},'montage',this.value)">${Object.keys(MONT_LABEL).map(t=>`<option value="${t}" ${(e.montage||'plafond')===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
+    <label>forme<select onchange="updExtract(${i},'type',this.value)">${Object.keys(TYPE_LABEL).map(t=>`<option value="${t}" ${(e.type||'grille')===t?'selected':''}>${TYPE_LABEL[t]}</option>`).join('')}</select></label>
+    <label>${dimLbl}<input type="number" step="0.01" min="0.01" value="${e.dim||0.4}" oninput="updExtract(${i},'dim',this.value)"></label>
+    ${fente}
+    <label>X (m)<input type="number" step="0.1" value="${e.x}" oninput="updExtract(${i},'x',this.value)"></label>
+    <label>Y (m)<input type="number" step="0.1" value="${e.y}" oninput="updExtract(${i},'y',this.value)"></label>
+    <label>Z (m)<input type="number" step="0.1" value="${e.z==null?r.H:e.z}" oninput="updExtract(${i},'z',this.value)"></label>
+    <label>Q (m³/h, vide = auto)<input type="number" step="5" min="0" placeholder="auto" value="${e.q||''}" oninput="updExtract(${i},'q',this.value)"></label>
+    <button class="mini" onclick="delExtract(${i})">✕</button></div>`;
+  }).join('')+
+  `<p class="note">Plafond : X, Y = position (Z ignoré). Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur. La taille de la reprise règle la zone d'aspiration. Si la somme des débits de reprise diffère du débit de soufflage, elle est rééquilibrée automatiquement.</p>`;
+}
+function renderMobilier(){
+  $('#mobilier').innerHTML=state.mobilier.map((m,i)=>`<div class="row"><span class="tag" style="background:${PALETTE[i%PALETTE.length]}22;color:${PALETTE[i%PALETTE.length]}">${esc(m.nom)}</span>
+    <label>type<select onchange="presetMeuble(${i},this.value)">${Object.keys(PRESETS).map(p=>`<option ${m.preset===p?'selected':''}>${p}</option>`).join('')}</select></label>
+    <label>nom<input type="text" value="${esc(m.nom)}" oninput="updMeuble(${i},'nom',this.value)" style="width:90px"></label>
+    <label>X (m)<input type="number" step="0.1" value="${m.x}" oninput="updMeuble(${i},'x',this.value)"></label>
+    <label>Y (m)<input type="number" step="0.1" value="${m.y}" oninput="updMeuble(${i},'y',this.value)"></label>
+    <label>Z base (m)<input type="number" step="0.1" value="${m.z}" oninput="updMeuble(${i},'z',this.value)"></label>
+    <label>L (m)<input type="number" step="0.05" value="${m.L}" oninput="updMeuble(${i},'L',this.value)"></label>
+    <label>l (m)<input type="number" step="0.05" value="${m.l}" oninput="updMeuble(${i},'l',this.value)"></label>
+    <label>H (m)<input type="number" step="0.05" value="${m.H}" oninput="updMeuble(${i},'H',this.value)"></label>
+    <button class="mini" onclick="delMeuble(${i})">✕</button></div>`).join('');
+}
+function renderSimParams(){
+  const s=state.sim;
+  $('#simparams').innerHTML=`
+    <label class="f"><span><input type="checkbox" id="autoD" ${s.autoDuree?'checked':''} style="width:auto" onchange="updAuto(this.checked)"> Durée auto ≈ min(4 × τ nominal, 1 h) (recommandé)</span></label>
+    <label class="f"><span>Durée de simulation (s)</span><input type="number" id="inpDuree" min="10" max="3600" step="10" value="${s.duree}" oninput="updSim('duree',this.value)" ${s.autoDuree?'disabled':''}></label>
+    <label class="f"><span>Nombre de particules</span><input type="number" min="1000" max="30000" step="500" value="${s.nb}" oninput="updSim('nb',this.value)"></label>
+    <label class="f"><span>Vitesse de lecture : <b id="lblVit">${s.vitesse}</b>×</span><input type="range" min="1" max="500" step="1" value="${s.vitesse}" oninput="updSim('vitesse',this.value);$('#lblVit').textContent=this.value.replace('.',',')"></label>`;
+}
+function updRoom(k,v){const x=parseFloat(v);if(!isNaN(x))state.room[k]=x;renderExtracts();}
+function updSupply(i,k,v){const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;}
+function delSupply(i){state.supplies.splice(i,1);renderSupplies();}
+function addSupply(){state.supplies.push({id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:state.room.L/2,y:state.room.l/2,z:state.room.H,q:60,dir:'vert',azi:0});renderSupplies();}
+function updExtract(i,k,v){const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;}
+function delExtract(i){state.extracts.splice(i,1);renderExtracts();}
+function addExtract(){state.extracts.push({id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:state.room.l-0.3,z:state.room.H,q:0});renderExtracts();}
+function updMeuble(i,k,v){const m=state.mobilier[i];if(k==='nom'){m.nom=v;return;}const x=parseFloat(v);if(!isNaN(x))m[k]=x;}
+function presetMeuble(i,p){const m=state.mobilier[i];m.preset=p;const pr=PRESETS[p];if(pr){m.L=pr.L;m.l=pr.l;m.H=pr.H;}renderMobilier();}
+function delMeuble(i){state.mobilier.splice(i,1);renderMobilier();}
+function addMeuble(){const n=state.mobilier.length+1;state.mobilier.push({id:uid++,preset:'Table',nom:'Élément '+n,x:state.room.L/2,y:state.room.l/2,z:0,L:1.6,l:0.8,H:0.75});renderMobilier();}
+function updSim(k,v){const x=parseFloat(v);if(!isNaN(x))state.sim[k]=x;}
+function updAuto(v){state.sim.autoDuree=v;const el=$('#inpDuree');if(el)el.disabled=v;}
+function changerTranche(v){state.sim.tranche=parseFloat(v);$('#lblTranche').textContent=fmt(parseFloat(v),1);drawHeatmap();}
+function setView(v){
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  $('#pane3d').style.display=(v==='3d'||v==='both')?'flex':'none';
+  $('#pane2d').style.display=(v==='2d'||v==='both')?'flex':'none';
+  render3D();drawHeatmap();
+}
+function lancer(){
+  const r=state.room;
+  if(!(r.L>0&&r.l>0&&r.H>0)){alert('Dimensions de la pièce invalides.');return;}
+  if(!state.supplies.length){alert('Ajoutez au moins une bouche d\'insufflation.');return;}
+  if(!state.extracts.length){alert('Ajoutez au moins une bouche d\'extraction.');return;}
+  if(state.supplies.some(b=>!(b.q>0)||!(b.dim>0))){alert('Chaque bouche de soufflage doit avoir un débit et une dimension valides.');return;}
+  if(state.extracts.some(e=>!((e.dim||0)>0))){alert('Chaque reprise doit avoir une dimension valide.');return;}
+  const V=r.L*r.l*r.H;
+  const Qsup=state.supplies.reduce((s,b)=>s+b.q,0);
+  const Qs=Qsup/3600;
+  const exts=state.extracts.map(e=>{const pos=posOf(e,r);const A=effAire(e);return{pos,q:e.q,rs:clamp(2*Math.sqrt(A/Math.PI)+0.25,0.35,0.9),rd:Math.max(0.08,0.15*Math.sqrt(A/Math.PI)+0.05)};});
+  let Qe=exts.reduce((s,e)=>s+e.q,0);
+  let reequilibre=false;
+  if(Math.abs(Qe-Qsup)>0.5){exts.forEach(e=>e.q=Qsup/exts.length);Qe=Qsup;reequilibre=true;}
+  const tauN=V/Qs;
+  const sup=state.supplies.map(b=>{const A=effAire(b);return{...b,A,v0:v0Of(b),r0:Math.sqrt(A/Math.PI),pos:posOf(b,r),dv:dirOf(b,r)};});
+  const cs=0.25;
+  const nx=Math.max(6,Math.round(r.L/cs)),ny=Math.max(6,Math.round(r.l/cs)),nz=Math.max(4,Math.round(r.H/cs));
+  const N=clamp(Math.round(state.sim.nb),500,20000);
+  const T=state.sim.autoDuree?clamp(Math.round(4*tauN),180,3600):clamp(state.sim.duree,10,3600);
+  const dt=clamp(tauN/500,0.05,0.12);
+  const extMain=exts.reduce((a,b)=>((b.q||0)>(a.q||0)?b:a),exts[0]);
+  sim={
+    env:{room:r,furn:state.mobilier.map(m=>({x:m.x,y:m.y,z:m.z,L:m.L,l:m.l,H:m.H})),exts,sup,extMain,vd:clamp(2*Qs/(r.L*r.H),0.003,0.1)},
+    V,Qsup,Qs,tauN,T,N,dt,tSim:0,
+    parts:[],resTimes:[],nx,ny,nz,csx:r.L/nx,csy:r.l/ny,csz:r.H/nz,
+    cellTime:new Float64Array(nx*ny*nz),cellAge:new Float64Array(nx*ny*nz),
+    running:true,done:false,reequilibre,streams:null,results:null
+  };
+  for(let i=0;i<N;i++)emitParticle();
+  $('#btnLancer').disabled=true;$('#btnPause').disabled=false;$('#btnPause').textContent='⏸ Pause';
+  $('#btnRapport').disabled=true;$('#btnPng').disabled=true;
+  const pg=$('#progress');if(pg)pg.textContent='Simulation lancée…';
+  updateStats();
+  lastT=0;
+  requestAnimationFrame(tick);
+}
+function emitParticle(){
+  const s=sim,env=s.env;
+  let tot=0;for(const b of env.sup)tot+=b.q;
+  let pick=Math.random()*tot, b=env.sup[0];
+  for(const c of env.sup){pick-=c.q;if(pick<=0){b=c;break;}}
+  let px=b.pos[0]+b.dv[0]*0.03,py=b.pos[1]+b.dv[1]*0.03,pz=b.pos[2]+b.dv[2]*0.03;
+  if(!b.montage||b.montage==='plafond'){
+    px+=b.type==='fente'?rnd(-b.dim/2,b.dim/2):gauss()*b.r0*0.7;
+    py+=b.type==='fente'?rnd(-0.01,0.01):gauss()*b.r0*0.7;
+  }else{
+    pz+=rnd(-0.05,0.05);
+    if(b.montage==='murX0'||b.montage==='murX1')py+=rnd(-Math.min(b.dim,0.6)/2,Math.min(b.dim,0.6)/2);
+    else px+=rnd(-Math.min(b.dim,0.6)/2,Math.min(b.dim,0.6)/2);
+  }
+  s.parts.push({
+    x:clamp(px,0.02,env.room.L-0.02),y:clamp(py,0.02,env.room.l-0.02),z:clamp(pz,0.02,env.room.H-0.02),
+    vx:b.dv[0]*b.v0,vy:b.dv[1]*b.v0,vz:b.dv[2]*b.v0,
+    age:0,Tp:env.room.Tsouf,r0:b.r0
+  });
+}
+function advect(p,dt,env){
+  const r=env.room;
+  const sp=Math.sqrt(p.vx*p.vx+p.vy*p.vy+p.vz*p.vz)||1e-6;
+  const f=1/(1+0.16*sp*dt/(2*p.r0));
+  const drag=1-0.4*dt;
+  p.vx*=f*drag;p.vy*=f*drag;p.vz*=f*drag;
+  if(r.Tsouf!==r.Tamb){
+    p.vz+=9.81*(1/293)*(p.Tp-r.Tamb)*dt;
+    p.Tp+=(r.Tamb-p.Tp)*dt/3;
+  }
+  const Dt=0.01,sd=Math.sqrt(2*Dt*dt);
+  p.x+=p.vx*dt+ru()*sd;p.y+=p.vy*dt+ru()*sd;p.z+=p.vz*dt+ru()*sd;
+  const em=env.extMain;
+  if(em){
+    const ex=em.pos[0]-p.x,ey=em.pos[1]-p.y,ez=em.pos[2]-p.z;
+    const ed=Math.sqrt(ex*ex+ey*ey+ez*ez)||1e-6;
+    p.vx+=((ex/ed)*env.vd-p.vx)*0.8*dt;p.vy+=((ey/ed)*env.vd-p.vy)*0.8*dt;p.vz+=((ez/ed)*env.vd-p.vz)*0.8*dt;
+  }
+  if(p.x<0){p.x=0;p.vx=Math.abs(p.vx)*0.35;}
+  if(p.x>r.L){p.x=r.L;p.vx=-Math.abs(p.vx)*0.35;}
+  if(p.y<0){p.y=0;p.vy=Math.abs(p.vy)*0.35;}
+  if(p.y>r.l){p.y=r.l;p.vy=-Math.abs(p.vy)*0.35;}
+  if(p.z<0){p.z=0;p.vz=Math.abs(p.vz)*0.35;p.vx*=0.97;p.vy*=0.97;}
+  if(p.z>r.H){p.z=r.H;p.vz=-Math.abs(p.vz)*0.35;}
+  for(const m of env.furn){
+    const x1=m.x-m.L/2,x2=m.x+m.L/2,y1=m.y-m.l/2,y2=m.y+m.l/2,z1=m.z,z2=m.z+m.H;
+    if(p.x>x1-0.02&&p.x<x2+0.02&&p.y>y1-0.02&&p.y<y2+0.02&&p.z>z1-0.02&&p.z<z2+0.02){
+      const d=[p.x-x1,x2-p.x,p.y-y1,y2-p.y,p.z-z1,z2-p.z];
+      let mi=0;for(let k=1;k<6;k++)if(d[k]<d[mi])mi=k;
+      if(mi===0){p.x=x1-0.02;p.vx=-Math.abs(p.vx)*0.3;}
+      else if(mi===1){p.x=x2+0.02;p.vx=Math.abs(p.vx)*0.3;}
+      else if(mi===2){p.y=y1-0.02;p.vy=-Math.abs(p.vy)*0.3;}
+      else if(mi===3){p.y=y2+0.02;p.vy=Math.abs(p.vy)*0.3;}
+      else if(mi===4){p.z=z1-0.02;p.vz=-Math.abs(p.vz)*0.3;}
+      else{p.z=z2+0.02;p.vz=Math.abs(p.vz)*0.3;}
+      break;
+    }
+  }
+  for(const e of env.exts){
+    const dx=e.pos[0]-p.x,dy=e.pos[1]-p.y,dz=e.pos[2]-p.z;
+    const d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    if(d<e.rs){
+      const s=1.2+2.8*(1-d/e.rs);
+      p.vx=p.vx*0.8+(dx/(d||1e-6))*s*0.2;
+      p.vy=p.vy*0.8+(dy/(d||1e-6))*s*0.2;
+      p.vz=p.vz*0.8+(dz/(d||1e-6))*s*0.2;
+      if(d<e.rd)return 1;
+    }
+  }
+  if(p.age>4*sim.tauN)return 2;
+  return 0;
+}
+function stepSim(dt){
+  const s=sim,env=s.env;
+  s.tSim+=dt;
+  const parts=s.parts;
+  for(let i=parts.length-1;i>=0;i--){
+    const p=parts[i];
+    p.age+=dt;
+    const st=advect(p,dt,env);
+    const ci=clamp(Math.floor(p.x/s.csx),0,s.nx-1),cj=clamp(Math.floor(p.y/s.csy),0,s.ny-1),ck=clamp(Math.floor(p.z/s.csz),0,s.nz-1);
+    const idx=ci+s.nx*(cj+s.ny*ck);
+    s.cellTime[idx]+=dt;s.cellAge[idx]+=p.age*dt;
+    if(st!==0){s.resTimes.push(p.age);parts[i]=parts[parts.length-1];parts.pop();}
+  }
+}
+let lastT=0,lastProg=0;
+function tick(ts){
+  if(!sim||!sim.running)return;
+  const realDt=Math.min(0.1,((ts-lastT)/1000)||0.016);
+  lastT=ts;
+  const steps=Math.min(4000,Math.max(1,Math.floor(state.sim.vitesse*realDt/sim.dt)));
+  for(let k=0;k<steps&&sim.tSim<sim.T;k++)stepSim(sim.dt);
+  render3D();
+  if(ts-lastProg>400){
+    lastProg=ts;
+    const el=$('#progress');
+    if(el&&sim)el.textContent='Simulation en cours : '+fmt(sim.tSim,0)+' / '+fmt(sim.T,0)+' s ('+Math.round(100*sim.tSim/sim.T)+' %) — particules restantes : '+sim.parts.length;
+  }
+  if(sim.tSim>=sim.T||sim.parts.length===0)finishSim();
+  else requestAnimationFrame(tick);
+}
+function pauseReprendre(){
+  if(!sim)return;
+  sim.running=!sim.running;
+  $('#btnPause').textContent=sim.running?'⏸ Pause':'▶ Reprendre';
+  if(sim.running){lastT=0;requestAnimationFrame(tick);}
+}
+function reinitSim(){
+  if(sim&&sim.running)return;
+  sim=null;
+  $('#btnLancer').disabled=false;$('#btnPause').disabled=true;$('#btnRapport').disabled=true;$('#btnPng').disabled=true;
+  const pg=$('#progress');if(pg)pg.textContent='';
+  updateStats();drawHeatmap();render3D();
+}
+function finishSim(){
+  const s=sim;
+  s.running=false;s.done=true;
+  const n=s.nx*s.ny*s.nz;
+  const pct=new Float64Array(n).fill(NaN);
+  let valid=0,sumPct=0,over100=0,sumAge=0;
+  for(let c=0;c<n;c++){
+    if(s.cellTime[c]>1.5){
+      const ma=s.cellAge[c]/s.cellTime[c];
+      pct[c]=100*s.tauN/ma;
+      valid++;sumPct+=pct[c];sumAge+=ma;
+      if(pct[c]>=100)over100++;
+    }
+  }
+  const res=s.resTimes;
+  const resMoy=res.length?res.reduce((a,b)=>a+b,0)/res.length:NaN;
+  const resOK=res.length?res.filter(a=>a<=s.tauN).length/res.length*100:NaN;
+  s.results={
+    pct,nx:s.nx,ny:s.ny,nz:s.nz,csx:s.csx,csy:s.csy,csz:s.csz,
+    effMoy:valid?sumPct/valid:NaN,
+    pctVol100:valid?over100/valid*100:NaN,
+    ageMoy:valid?sumAge/valid:NaN,
+    resMoy,resOK,renouv:res.length?100*res.length/s.N:0,renouvTheo:100*(1-Math.exp(-s.T/s.tauN)),
+    ach:3600*s.Qs/s.V,valid
+  };
+  const pg=$('#progress');
+  if(pg)pg.textContent='Simulation terminée : '+fmt(s.resTimes.length,0)+' / '+s.N+' particules extraites avant '+fmt(s.T,0)+' s ('+fmt(100*s.resTimes.length/s.N,0)+' %).';
+  buildStreamlines();
+  updateStats();drawHeatmap();render3D();
+  $('#btnPause').disabled=true;$('#btnLancer').disabled=false;
+  $('#btnRapport').disabled=false;$('#btnPng').disabled=false;
+}
+function buildStreamlines(){
+  const s=sim,env=s.env;
+  s.streams=[];
+  for(const b of env.sup){
+    for(let k=0;k<16;k++){
+      const p={x:b.pos[0]+b.dv[0]*0.03+gauss()*b.r0*0.5,y:b.pos[1]+b.dv[1]*0.03+gauss()*b.r0*0.5,z:b.pos[2]+b.dv[2]*0.03,
+        vx:b.dv[0]*b.v0,vy:b.dv[1]*b.v0,vz:b.dv[2]*b.v0,age:0,Tp:env.room.Tsouf,r0:b.r0};
+      const pts=[];
+      for(let st=0;st<700;st++){
+        p.age+=0.05;
+        const r=advect(p,0.06,env);
+        if(st%4===0)pts.push([p.x,p.y,p.z,Math.sqrt(p.vx*p.vx+p.vy*p.vy+p.vz*p.vz)]);
+        if(r!==0||pts.length>160)break;
+      }
+      if(pts.length>3)s.streams.push(pts);
+    }
+  }
+}
+function updateStats(){
+  const r=state.room,V=r.L*r.l*r.H;
+  const Qsup=state.supplies.reduce((s,b)=>s+b.q,0);
+  const tauN=V/(Qsup/3600);
+  let h=`<div class="stat"><b>${fmt(Qsup,0)} m³/h</b><span>débit d'insufflation total</span></div>
+  <div class="stat"><b>${fmt(V,1)} m³</b><span>volume de la pièce</span></div>
+  <div class="stat"><b>${fmt(tauN/60,1)} min</b><span>τ nominal = V/Q</span></div>
+  <div class="stat"><b>${fmt(3600*Qsup/3600/V,1)} h⁻¹</b><span>taux de renouvellement (ACH)</span></div>`;
+  if(sim&&sim.results){
+    const R=sim.results;
+    h+=`<div class="stat"><b>${fmt(R.effMoy,0)} %</b><span>taux de balayage moyen (pondéré volume)</span></div>
+    <div class="stat"><b>${fmt(R.pctVol100,0)} %</b><span>du volume avec balayage ≥ 100 %</span></div>
+    <div class="stat"><b>${fmt(R.renouv,0)} %</b><span>air renouvelé après ${fmt(sim.T,0)} s (simulé ; ${fmt(R.renouvTheo,0)} % théorique)</span></div>
+    <div class="stat"><b>${fmt(R.resMoy/60,1)} min</b><span>temps de résidence moyen (particules extraites)</span></div>
+    <div class="stat"><b>${fmt(R.resOK,0)} %</b><span>des particules extraites en moins d'un τ nominal</span></div>
+    <div class="stat"><b>${fmt(100*sim.resTimes.length/sim.N,0)} %</b><span>des particules extraites avant ${fmt(sim.T,0)} s</span></div>`;
+    if(sim.reequilibre)h+=`<div class="stat" style="border-color:var(--warn)"><b style="color:var(--warn)">⚠</b><span>débits d'extraction rééquilibrés automatiquement</span></div>`;
+    const vmax=state.supplies.reduce((m,b)=>Math.max(m,v0Of(b)),0);
+    if(vmax>25)h+=`<div class="stat" style="border-color:var(--warn)"><b style="color:var(--warn)">⚠ ${fmt(vmax,1)} m/s</b><span>vitesse de soufflage max élevée</span></div>`;
+  }else{
+    h+=`<div class="stat"><b>—</b><span>lancez la simulation pour obtenir les résultats</span></div>`;
+  }
+  $('#stats').innerHTML=h;
+}
+function sweepColor(p){
+  if(p==null||isNaN(p))return'#6b7280';
+  const t=clamp(p/150,0,1);
+  return`hsl(${225-225*t},90%,50%)`;
+}
+function speedColor(v){const t=clamp(v/6,0,1);return`hsl(${220-220*t},85%,58%)`;}
+function ageColor(a,tau){const t=clamp(a/(2*tau),0,1);return`hsl(${210-210*t},85%,58%)`;}
+function drawHeatmap(){
+  const c=$('#heatmap'),x=c.getContext('2d');
+  const W=c.width,H=c.height,r=state.room;
+  x.clearRect(0,0,W,H);
+  x.fillStyle='#101826';x.fillRect(0,0,W,H);
+  const legW=110,pad=14;
+  const aw=W-legW-pad*2,ah=H-pad*2;
+  const sc=Math.min(aw/r.L,ah/r.l);
+  const ox=pad+(aw-r.L*sc)/2,oy=pad+(ah-r.l*sc)/2;
+  const P=(px,py)=>[ox+px*sc,oy+py*sc];
+  let nx,ny,csx,csy,pct;
+  if(sim&&sim.results){nx=sim.results.nx;ny=sim.results.ny;csx=sim.results.csx;csy=sim.results.csy;pct=sim.results.pct;}
+  else{nx=Math.max(6,Math.round(r.L/0.25));ny=Math.max(6,Math.round(r.l/0.25));csx=r.L/nx;csy=r.l/ny;pct=null;}
+  const z=state.sim.tranche;
+  let k=0;
+  if(sim&&sim.results){k=clamp(Math.floor(z/r.H*sim.results.nz),0,sim.results.nz-1);}
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    let v=null;
+    if(pct){const idx=i+nx*(j+ny*k);v=pct[idx];}
+    const[a,b]=P(i*csx,j*csy);
+    x.fillStyle=sweepColor(v);
+    x.fillRect(a,b,csx*sc-0.5,csy*sc-0.5);
+  }
+  x.strokeStyle='#e8eef6';x.lineWidth=2.5;
+  const[c0,c1]=P(0,0),[c2,c3]=P(r.L,r.l);
+  x.strokeRect(c0,c1,c2-c0,c3-c1);
+  x.strokeStyle='#475569';x.lineWidth=1;x.setLineDash([4,4]);
+  for(let gx=0.5;gx<r.L;gx+=0.5){const[a,b]=P(gx,0),[a2,b2]=P(gx,r.l);x.beginPath();x.moveTo(a,b);x.lineTo(a2,b2);x.stroke();}
+  for(let gy=0.5;gy<r.l;gy+=0.5){const[a,b]=P(0,gy),[a2,b2]=P(r.L,gy);x.beginPath();x.moveTo(a,b);x.lineTo(a2,b2);x.stroke();}
+  x.setLineDash([]);
+  state.mobilier.forEach((m,i)=>{
+    const[a,b]=P(m.x-m.L/2,m.y-m.l/2),[a2,b2]=P(m.x+m.L/2,m.y+m.l/2);
+    x.fillStyle=PALETTE[i%PALETTE.length]+'55';x.fillRect(a,b,a2-a,b2-b);
+    x.strokeStyle=PALETTE[i%PALETTE.length];x.lineWidth=1.5;x.strokeRect(a,b,a2-a,b2-b);
+    x.fillStyle='#fff';x.font='10px sans-serif';x.fillText(m.nom,a+3,b+12);
+  });
+  state.supplies.forEach(b=>{
+    const pp=posOf(b,r);const[a,bb]=P(pp[0],pp[1]);const rad=Math.max(4,b.dim*sc/2);
+    x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;
+    x.beginPath();
+    if(b.type==='rond')x.arc(a,bb,rad,0,7);
+    else if(b.type==='carre')x.rect(a-rad,bb-rad,rad*2,rad*2);
+    else x.rect(a-b.dim*sc/2,bb-rad/2,b.dim*sc,rad);
+    x.fill();x.stroke();
+    x.fillStyle='#d1fae5';x.font='bold 10px sans-serif';x.fillText(b.q+' m³/h',a+rad+3,bb+3);
+  });
+  state.extracts.forEach(e=>{
+    const pp=posOf(e,r);const[a,b]=P(pp[0],pp[1]);
+    x.strokeStyle='#f87171';x.lineWidth=2.5;
+    x.beginPath();x.moveTo(a-6,b-6);x.lineTo(a+6,b+6);x.moveTo(a+6,b-6);x.lineTo(a-6,b+6);x.stroke();
+    x.fillStyle='#fecaca';x.font='10px sans-serif';x.fillText('extraction',a+8,b-6);
+  });
+  const lx=W-legW+8,ly=pad,lh=ah;
+  const gr=x.createLinearGradient(0,ly,0,ly+lh);
+  for(let t=0;t<=1.001;t+=0.05){gr.addColorStop(t,sweepColor(150*t));}
+  x.fillStyle=gr;x.fillRect(lx,ly,22,lh);
+  x.strokeStyle='#64748b';x.lineWidth=1;x.strokeRect(lx,ly,22,lh);
+  x.fillStyle='#e8eef6';x.font='11px sans-serif';
+  [0,25,50,75,100,125,150].forEach(v=>{
+    const yy=ly+lh-(clamp(v/150,0,1))*lh;
+    x.fillText(v+' %',lx+28,yy+4);
+    x.strokeStyle='#64748b';x.beginPath();x.moveTo(lx,yy);x.lineTo(lx+22,yy);x.stroke();
+  });
+  x.fillText('≥150 %',lx+28,ly+4);
+  x.fillStyle='#9fb0c3';x.font='11px sans-serif';
+  x.fillText('Taux de balayage local = τnominal / âge moyen de l’air × 100 %',pad,H-8);
+  x.fillText(`Tranche horizontale z = ${fmt(z,1)} m — gris : zone non balayée (donnée insuffisante)`,pad,pad-2+12);
+  x.fillStyle='#34d399';x.fillText('■ insufflation',W-legW-100,H-8);
+  x.fillStyle='#f87171';x.fillText('✕ extraction',W-legW-30,H-8);
+}
+function telechargerHeatmap(){
+  const a=document.createElement('a');
+  a.href=$('#heatmap').toDataURL('image/png');
+  a.download='heatmap-balayage-ventilation.png';
+  a.click();
+}
+const view={theta:0.8,phi:0.9,dist:14};
+function camBasis(){
+  const r=state.room;
+  const t=[r.L/2,r.l/2,r.H/2];
+  const cp=Math.cos(view.phi),sp=Math.sin(view.phi),ct=Math.cos(view.theta),st=Math.sin(view.theta);
+  const cam=[t[0]+view.dist*cp*st,t[1]+view.dist*cp*ct,t[2]+view.dist*sp];
+  const fwd=[t[0]-cam[0],t[1]-cam[1],t[2]-cam[2]];
+  const fl=Math.hypot(...fwd);fwd[0]/=fl;fwd[1]/=fl;fwd[2]/=fl;
+  let right=[-fwd[2],0,fwd[0]];const rl=Math.hypot(...right)||1;right[0]/=rl;right[1]/=rl;right[2]/=rl;
+  if(rl<1e-6)right=[1,0,0];
+  const up=[right[1]*fwd[2]-right[2]*fwd[1],right[2]*fwd[0]-right[0]*fwd[2],right[0]*fwd[1]-right[1]*fwd[0]];
+  return{cam,right,up,fwd,t};
+}
+function render3D(){
+  const c=$('#view3d');
+  const pane=c.parentElement;
+  const dpr=window.devicePixelRatio||1;
+  const w=pane.clientWidth,h=pane.clientHeight;
+  if(w<50||h<50)return;
+  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);}
+  const x=c.getContext('2d');
+  x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,w,h);
+  const g=x.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#16202e');g.addColorStop(1,'#0c1420');
+  x.fillStyle=g;x.fillRect(0,0,w,h);
+  const r=state.room;
+  const B=camBasis();
+  const f=Math.min(w,h)*0.95;
+  const cx=w/2,cy=h/2;
+  function proj(p){
+    const dx=p[0]-B.cam[0],dy=p[1]-B.cam[1],dz=p[2]-B.cam[2];
+    const z=dx*B.fwd[0]+dy*B.fwd[1]+dz*B.fwd[2];
+    if(z<0.15)return null;
+    const px=dx*B.right[0]+dy*B.right[1]+dz*B.right[2];
+    const py=dx*B.up[0]+dy*B.up[1]+dz*B.up[2];
+    return[cx+f*px/z,cy-f*py/z,z];
+  }
+  const items=[];
+  const corners={};
+  const defs=[[0,0,0],[r.L,0,0],[r.L,r.l,0],[0,r.l,0],[0,0,r.H],[r.L,0,r.H],[r.L,r.l,r.H],[0,r.l,r.H]];
+  const edges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  for(const[a,b]of edges){
+    const pa=proj(defs[a]),pb=proj(defs[b]);
+    if(pa&&pb)items.push({d:(pa[2]+pb[2])/2,draw:()=>{x.strokeStyle='#3b82f6';x.lineWidth=1.4;x.beginPath();x.moveTo(pa[0],pa[1]);x.lineTo(pb[0],pb[1]);x.stroke();}});
+  }
+  for(let gx=0;gx<=r.L+1e-6;gx+=0.5){
+    const a=proj([gx,0,0]),b=proj([gx,r.l,0]);
+    if(a&&b)items.push({d:(a[2]+b[2])/2,draw:()=>{x.strokeStyle='rgba(148,163,184,.18)';x.lineWidth=1;x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(b[0],b[1]);x.stroke();}});
+  }
+  for(let gy=0;gy<=r.l+1e-6;gy+=0.5){
+    const a=proj([0,gy,0]),b=proj([r.L,gy,0]);
+    if(a&&b)items.push({d:(a[2]+b[2])/2,draw:()=>{x.strokeStyle='rgba(148,163,184,.18)';x.lineWidth=1;x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(b[0],b[1]);x.stroke();}});
+  }
+  const faces=[[[0,0,0],[r.L,0,0],[r.L,0,r.H],[0,0,r.H]],[[0,r.l,0],[r.L,r.l,0],[r.L,r.l,r.H],[0,r.l,r.H]],[[0,0,0],[0,r.l,0],[0,r.l,r.H],[0,0,r.H]],[[r.L,0,0],[r.L,r.l,0],[r.L,r.l,r.H],[r.L,0,r.H]],[[0,0,0],[r.L,0,0],[r.L,r.l,0],[0,r.l,0]],[[0,0,r.H],[r.L,0,r.H],[r.L,r.l,r.H],[0,r.l,r.H]]];
+  faces.forEach((fc,i)=>{
+    const ps=fc.map(proj);
+    if(ps.some(p=>!p))return;
+    const d=ps.reduce((s,p)=>s+p[2],0)/4;
+    items.push({d,draw:()=>{
+      x.fillStyle=i===5?'rgba(59,130,246,.10)':'rgba(59,130,246,.05)';
+      x.beginPath();x.moveTo(ps[0][0],ps[0][1]);for(let k=1;k<4;k++)x.lineTo(ps[k][0],ps[k][1]);x.closePath();x.fill();
+    }});
+  });
+  state.mobilier.forEach((m,i)=>{
+    const col=PALETTE[i%PALETTE.length];
+    const x1=m.x-m.L/2,x2=m.x+m.L/2,y1=m.y-m.l/2,y2=m.y+m.l/2,z1=m.z,z2=m.z+m.H;
+    const v=[[x1,y1,z1],[x2,y1,z1],[x2,y2,z1],[x1,y2,z1],[x1,y1,z2],[x2,y1,z2],[x2,y2,z2],[x1,y2,z2]];
+    const fcs=[[0,1,2,3],[4,5,6,7],[0,1,5,4],[2,3,7,6],[1,2,6,5],[0,3,7,4]];
+    fcs.forEach(fc=>{
+      const ps=fc.map(k=>proj(v[k]));
+      if(ps.some(p=>!p))return;
+      const d=ps.reduce((s,p)=>s+p[2],0)/4;
+      items.push({d,draw:()=>{
+        x.fillStyle=col+'cc';x.strokeStyle=col;x.lineWidth=1;
+        x.beginPath();x.moveTo(ps[0][0],ps[0][1]);for(let k=1;k<4;k++)x.lineTo(ps[k][0],ps[k][1]);x.closePath();x.fill();x.stroke();
+      }});
+    });
+  });
+  state.supplies.forEach(b=>{
+    const p=proj(posOf(b,r));
+    if(!p)return;
+    const rad=Math.max(3,f*Math.max(b.dim,0.1)/(2*p[2]));
+    items.push({d:p[2],draw:()=>{
+      x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;x.beginPath();
+      if(b.type==='rond')x.arc(p[0],p[1],rad,0,7);
+      else if(b.type==='carre')x.rect(p[0]-rad,p[1]-rad,rad*2,rad*2);
+      else{x.save();x.translate(p[0],p[1]);x.rotate((b.azi||0)*Math.PI/180);x.rect(-rad*4,-rad/2,rad*8,rad);x.restore();}
+      x.fill();x.stroke();
+    }});
+  });
+  state.extracts.forEach(e=>{
+    const p=proj(posOf(e,r));
+    if(!p)return;
+    items.push({d:p[2],draw:()=>{
+      const s=Math.max(4,f*0.06/p[2]);
+      x.strokeStyle='#f87171';x.lineWidth=2.5;
+      x.beginPath();x.moveTo(p[0]-s,p[1]-s);x.lineTo(p[0]+s,p[1]+s);x.moveTo(p[0]+s,p[1]-s);x.lineTo(p[0]-s,p[1]+s);x.stroke();
+    }});
+  });
+  if(sim&&sim.streams){
+    for(const st of sim.streams){
+      const ps=st.map(q=>proj(q));
+      if(ps.filter(Boolean).length<2)continue;
+      let d=0,n=0;
+      ps.forEach(p=>{if(p){d+=p[2];n++;}});
+      items.push({d:d/Math.max(1,n),draw:()=>{
+        for(let k=1;k<ps.length;k++){
+          if(!ps[k]||!ps[k-1])continue;
+          x.strokeStyle=speedColor(st[k][3]);x.globalAlpha=0.85;x.lineWidth=1.6;
+          x.beginPath();x.moveTo(ps[k-1][0],ps[k-1][1]);x.lineTo(ps[k][0],ps[k][1]);x.stroke();x.globalAlpha=1;
+        }
+      }});
+    }
+  }
+  if(sim&&sim.parts.length){
+    const useAge=sim.done;
+    for(const p of sim.parts){
+      const q=proj([p.x,p.y,p.z]);
+      if(!q)continue;
+      items.push({d:q[2],draw:()=>{
+        const sp=Math.sqrt(p.vx*p.vx+p.vy*p.vy+p.vz*p.vz);
+        x.fillStyle=useAge?ageColor(p.age,sim.tauN):speedColor(sp);
+        const rad=clamp(f*0.018/q[2],0.6,3.5);
+        x.beginPath();x.arc(q[0],q[1],rad,0,7);x.fill();
+      }});
+    }
+  }
+  items.sort((a,b)=>b.d-a.d);
+  for(const it of items)it.draw();
+  x.fillStyle='#9fb0c3';x.font='11px sans-serif';
+  const legend=sim&&sim.done?'particules colorées par âge de l\'air (bleu = neuf, rouge = vieux) + lignes de courant':'bouches vertes = insufflation, croix rouges = extraction — lancez la simulation';
+  x.fillText(legend,10,h-10);
+}
+(function initControls(){
+  const c=$('#view3d');
+  let drag=false,lx=0,ly=0;
+  c.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY;});
+  window.addEventListener('mouseup',()=>drag=false);
+  window.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    view.theta+=(e.clientX-lx)*0.008;view.phi=clamp(view.phi+(e.clientY-ly)*0.008,0.05,1.55);
+    lx=e.clientX;ly=e.clientY;
+    if(!sim||!sim.running)render3D();
+  });
+  c.addEventListener('wheel',e=>{
+    e.preventDefault();
+    view.dist=clamp(view.dist*(1+Math.sign(e.deltaY)*0.08),4,40);
+    if(!sim||!sim.running)render3D();
+  },{passive:false});
+  window.addEventListener('resize',()=>{render3D();drawHeatmap();});
+})();
+function genererRapport(){
+  if(!sim||!sim.results)return;
+  const r=state.room,s=sim,R=sim.results;
+  const imgHM=$('#heatmap').toDataURL('image/png');
+  const img3D=$('#view3d').toDataURL('image/png');
+  const date=new Date().toLocaleString('fr-FR');
+  const rowsS=state.supplies.map((b,i)=>{
+    const dim=b.type==='rond'?`Ø ${fmt(b.dim*1000,0)} mm`:b.type==='fente'?`fente ${fmt(b.dim,2)} m × ${fmt((b.dim2||0.02)*1000,0)} mm`:`côté ${fmt(b.dim*1000,0)} mm`;
+    const pos=posOf(b,state.room);
+    const dirTxt=(!b.montage||b.montage==='plafond')?DIR_LABEL[b.dir]+' (az. '+fmt(b.azi||0,0)+'°)':'horizontale vers l\'intérieur';
+    return`<tr><td>${i+1}</td><td>${TYPE_LABEL[b.type]}</td><td>${dim}</td><td>${MONT_LABEL[b.montage||'plafond']}</td><td>${fmt(pos[0],2)} ; ${fmt(pos[1],2)} ; z=${fmt(pos[2],2)}</td><td>${fmt(b.q,0)} m³/h</td><td>${dirTxt}</td><td>${fmt(v0Of(b),1)} m/s</td></tr>`;
+  }).join('');
+  const rowsE=state.extracts.map((e,i)=>{
+    const dimE=e.type==='rond'?`Ø ${fmt((e.dim||0.4)*1000,0)} mm`:e.type==='fente'?`fente ${fmt(e.dim,2)} m × ${fmt((e.dim2||0.02)*1000,0)} mm`:`côté ${fmt((e.dim||0.4)*1000,0)} mm`;
+    const pos=posOf(e,state.room);
+    return`<tr><td>${i+1}</td><td>${TYPE_LABEL[e.type||'grille']}</td><td>${dimE}</td><td>${MONT_LABEL[e.montage||'plafond']}</td><td>${fmt(pos[0],2)} ; ${fmt(pos[1],2)} ; z=${fmt(pos[2],2)}</td><td>${e.q?fmt(e.q,0)+' m³/h':'auto ('+fmt(s.Qsup/state.extracts.length,0)+' m³/h)'}</td></tr>`;
+  }).join('');
+  const rowsM=state.mobilier.map((m,i)=>`<tr><td>${esc(m.nom)}</td><td>${fmt(m.x,2)} ; ${fmt(m.y,2)} ; z=${fmt(m.z,2)}</td><td>${fmt(m.L,2)} × ${fmt(m.l,2)} × ${fmt(m.H,2)} m</td></tr>`).join('');
+  const doc=`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport de balayage de ventilation</title>
+<style>
+body{font-family:"Segoe UI",Arial,sans-serif;color:#111;margin:32px;font-size:13px}
+h1{font-size:20px;color:#0b3b5c;border-bottom:3px solid #0b3b5c;padding-bottom:6px}
+h2{font-size:15px;color:#0f5e46;margin-top:26px;border-bottom:1px solid #ccc;padding-bottom:3px}
+table{border-collapse:collapse;width:100%;margin-top:8px}
+th,td{border:1px solid #bbb;padding:5px 8px;text-align:left;font-size:12px}
+th{background:#e8f0f7}
+.meta{color:#555;font-size:12px}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.stat{border:1px solid #bbb;border-radius:8px;padding:8px 12px;min-width:140px;background:#f8fafc}
+.stat b{display:block;font-size:17px;color:#0f5e46}
+.stat span{font-size:11px;color:#555}
+img{max-width:100%;border:1px solid #bbb;border-radius:6px;margin-top:8px}
+.warn{background:#fef3c7;border:1px solid #f59e0b;padding:8px 12px;border-radius:6px}
+.note{background:#f1f5f9;border-left:4px solid #0b3b5c;padding:8px 12px;font-size:12px}
+@media print{body{margin:10px}}
+</style></head><body>
+<h1>Rapport de simulation de balayage de ventilation</h1>
+<p class="meta">Édité le ${date} — généré par le simulateur autonome (fichier HTML unique).</p>
+<h2>1. Pièce et conditions</h2>
+<table><tr><th>Longueur</th><th>Largeur</th><th>Hauteur</th><th>Volume</th><th>T° ambiante</th><th>T° de soufflage</th></tr>
+<tr><td>${fmt(r.L,2)} m</td><td>${fmt(r.l,2)} m</td><td>${fmt(r.H,2)} m</td><td>${fmt(s.V,1)} m³</td><td>${fmt(r.Tamb,1)} °C</td><td>${fmt(r.Tsouf,1)} °C</td></tr></table>
+<h2>2. Bouches de soufflage (insufflation)</h2>
+<table><tr><th>#</th><th>Forme</th><th>Dimensions</th><th>Montage</th><th>Position X;Y;Z (m)</th><th>Débit</th><th>Direction</th><th>Vitesse de soufflage</th></tr>${rowsS}</table>
+<h2>3. Reprises d'air (extraction)</h2>
+<table><tr><th>#</th><th>Forme</th><th>Dimensions</th><th>Montage</th><th>Position X;Y;Z (m)</th><th>Débit</th></tr>${rowsE}</table>
+${s.reequilibre?'<p class="warn">⚠ La somme des débits d\'extraction ne correspondait pas au débit d\'insufflation : les débits ont été rééquilibrés automatiquement.</p>':''}
+<h2>4. Mobilier et obstacles</h2>
+${state.mobilier.length?`<table><tr><th>Élément</th><th>Position X;Y;Z base (m)</th><th>Dimensions L × l × H</th></tr>${rowsM}</table>`:'<p>Aucun mobilier renseigné.</p>'}
+<h2>5. Paramètres et résultats de la simulation</h2>
+<table><tr><th>Durée simulée</th><th>Nombre de particules</th><th>Débit total</th><th>τ nominal (V/Q)</th><th>ACH</th><th>Air renouvelé après la durée simulée</th></tr>
+<tr><td>${fmt(s.T,0)} s${state.sim.autoDuree?' (auto ≈ 4 × τ nom., max 1 h)':''}</td><td>${s.N}</td><td>${fmt(s.Qsup,0)} m³/h</td><td>${fmt(s.tauN/60,1)} min</td><td>${fmt(R.ach,1)} h⁻¹</td><td>${fmt(R.renouv,1)} % (simulé ; ${fmt(R.renouvTheo,1)} % en théorie de mélange parfait)</td></tr></table>
+<div class="stats">
+<div class="stat"><b>${fmt(R.effMoy,1)} %</b><span>taux de balayage moyen (pondéré par le volume)</span></div>
+<div class="stat"><b>${fmt(R.pctVol100,1)} %</b><span>du volume balayé à ≥ 100 %</span></div>
+<div class="stat"><b>${fmt(R.ageMoy/60,1)} min</b><span>âge moyen local de l'air (volume balayé)</span></div>
+<div class="stat"><b>${fmt(R.resMoy/60,1)} min</b><span>temps de résidence moyen des particules extraites</span></div>
+<div class="stat"><b>${fmt(R.resOK,1)} %</b><span>des particules extraites en moins d'un τ nominal</span></div>
+<div class="stat"><b>${fmt(100*s.resTimes.length/s.N,1)} %</b><span>des particules extraites avant ${fmt(s.T,0)} s</span></div>
+</div>
+${s.resTimes.length/s.N<0.9?'<p class="warn">⚠ Seulement '+fmt(100*s.resTimes.length/s.N,0)+' % des particules ont atteint une extraction avant la fin de la durée simulée : la durée était courte devant les temps de résidence observés, la heat map est indicielle. Relancez avec la durée automatique (≈ 4 × τ nominal, max 1 h) pour viser l\'état permanent.</p>':''}
+<h2>6. Heat map du taux de balayage (tranche z = ${fmt(state.sim.tranche,1)} m)</h2>
+<p class="meta">Taux de balayage local = τ nominal / âge moyen local de l'air × 100 %. Bleu = faible balayage / air âgé, rouge = balayage élevé. Gris = zone non balayée.</p>
+<img src="${imgHM}" alt="Heat map du taux de balayage">
+<h2>7. Vue 3D du flux d'air</h2>
+<img src="${img3D}" alt="Vue 3D du flux d'air">
+<h2>8. Méthodologie et limites</h2>
+<p class="note">Modèle lagrangien simplifié : ${s.N} particules d'air émises à t = 0 aux bouches d'insufflation (pas de temps adaptatif 0,05–0,12 s) et suivies jusqu'à l'extraction. Les jets sont modélisés avec entraînement (décroissance de vitesse selon la distance), une diffusion turbulente, la flottabilité lorsque la température de soufflage diffère de l'ambiante, des rebonds sur les parois et les obstacles, une aspiration aux bouches d'extraction et une dérive de retour d'air vers l'extraction (circulation induite par l'entraînement des jets). L'âge de chaque particule est cumulé dans une grille volumique (~0,25 m) sur toute sa trajectoire (estimation de l'état permanent) ; l'âge moyen par cellule en déduit le taux de balayage local. Durée simulée : ${fmt(s.T,0)} s${state.sim.autoDuree?' (automatique, ≈ 4 × τ nominal, max 1 h)':''}.<br><br>
+<b>Attention :</b> ce rapport est un outil d'aide au dimensionnement et à la comparaison de configurations. Il ne se substitue pas à une étude CFD réglementaire ni aux exigences des normes et référentiels applicables (RE2020, NF EN 16798, etc.).</p>
+</body></html>`;
+  $('#repFrame').srcdoc=doc;
+  $('#overlay').hidden=false;
+}
+function fermerRapport(){$('#overlay').hidden=true;}
+function imprimerRapport(){const f=$('#repFrame');f.contentWindow.focus();f.contentWindow.print();}
+function telechargerRapport(){
+  const blob=new Blob([$('#repFrame').srcdoc],{type:'text/html;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='rapport-balayage-ventilation.html';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+renderPiece();renderSupplies();renderExtracts();renderMobilier();renderSimParams();
+$('#lblTranche').textContent=fmt(state.sim.tranche,1);
+drawHeatmap();render3D();updateStats();
+</script>
+</body>
+</html>

@@ -88,7 +88,7 @@ input[type=range]{padding:0}
       <button id="btnPng" onclick="telechargerHeatmap()" disabled>🖼 Heat map (PNG)</button>
     </div>
     <h2>Méthodologie</h2>
-    <p class="note">Modèle lagrangien simplifié : particules d'air émises à t = 0 aux bouches d'insufflation (pas de temps adaptatif 0,05–0,12 s) et suivies jusqu'à l'extraction. Jets avec entraînement (décroissance de la vitesse selon la distance), diffusion turbulente, flottabilité si écart de température soufflage/ambiance, rebonds sur parois et obstacles, aspiration aux extractions, et dérive de retour d'air vers l'extraction (circulation induite par l'entraînement des jets). L'âge de l'air est cumulé dans une grille volumique (~0,25 m) sur toute la trajectoire : l'âge moyen par cellule estime l'état permanent, et le <b>taux de balayage local</b> vaut τ<sub>nominal</sub> / âge moyen local × 100 %, avec τ<sub>nominal</sub> = Volume / Débit total. Utilisez la durée automatique (≈ 4 × τ<sub>nominal</sub>, max 1 h). Outil d'aide au dimensionnement — ne remplace pas une étude CFD réglementaire.</p>
+    <p class="note">Modèle lagrangien simplifié : particules d'air émises à t = 0 aux bouches d'insufflation (pas de temps adaptatif 0,05–0,12 s) et suivies jusqu'à l'extraction. Jets avec entraînement (décroissance de la vitesse selon la distance), diffusion turbulente, flottabilité si écart de température soufflage/ambiance, rebonds sur parois et obstacles, et aspiration aux extractions selon un écoulement de puits (v ∝ q/d² vers chaque reprise, proportionnel à son débit : prédominant près de la bouche, quasi nul aux coins — le trajet court soufflage→reprise est privilégié). L'âge de l'air est cumulé dans une grille volumique (~0,25 m) sur toute la trajectoire : l'âge moyen par cellule estime l'état permanent, et le <b>taux de balayage local</b> vaut τ<sub>nominal</sub> / âge moyen local × 100 %, avec τ<sub>nominal</sub> = Volume / Débit total. Utilisez la durée automatique (≈ 4 × τ<sub>nominal</sub>, max 1 h). Outil d'aide au dimensionnement — ne remplace pas une étude CFD réglementaire.</p>
   </aside>
   <section id="visu">
     <div id="stats"></div>
@@ -318,7 +318,7 @@ function lancer(){
   const dt=clamp(tauN/500,0.05,0.12);
   const extMain=exts.reduce((a,b)=>((b.q||0)>(a.q||0)?b:a),exts[0]);
   sim={
-    env:{room:r,furn:state.mobilier.map(m=>({x:m.x,y:m.y,z:m.z,L:m.L,l:m.l,H:m.H})),exts,sup,extMain,vd:clamp(2*Qs/(r.L*r.H),0.003,0.1)},
+    env:{room:r,furn:state.mobilier.map(m=>({x:m.x,y:m.y,z:m.z,L:m.L,l:m.l,H:m.H})),exts,sup},
     V,Qsup,Qs,tauN,T,N,dt,tSim:0,
     parts:[],resTimes:[],nx,ny,nz,csx:r.L/nx,csy:r.l/ny,csz:r.H/nz,
     cellTime:new Float64Array(nx*ny*nz),cellAge:new Float64Array(nx*ny*nz),
@@ -904,7 +904,7 @@ ${s.resTimes.length/s.N<0.9?'<p class="warn">⚠ Seulement '+fmt(100*s.resTimes.
 <h2>7. Vue 3D du flux d'air</h2>
 <img src="${img3D}" alt="Vue 3D du flux d'air">
 <h2>8. Méthodologie et limites</h2>
-<p class="note">Modèle lagrangien simplifié : ${s.N} particules d'air émises à t = 0 aux bouches d'insufflation (pas de temps adaptatif 0,05–0,12 s) et suivies jusqu'à l'extraction. Les jets sont modélisés avec entraînement (décroissance de vitesse selon la distance), une diffusion turbulente, la flottabilité lorsque la température de soufflage diffère de l'ambiante, des rebonds sur les parois et les obstacles, une aspiration aux bouches d'extraction et une dérive de retour d'air vers l'extraction (circulation induite par l'entraînement des jets). L'âge de chaque particule est cumulé dans une grille volumique (~0,25 m) sur toute sa trajectoire (estimation de l'état permanent) ; l'âge moyen par cellule en déduit le taux de balayage local. Durée simulée : ${fmt(s.T,0)} s${state.sim.autoDuree?' (automatique, ≈ 4 × τ nominal, max 1 h)':''}.<br><br>
+<p class="note">Modèle lagrangien simplifié : ${s.N} particules d'air émises à t = 0 aux bouches d'insufflation (pas de temps adaptatif 0,05–0,12 s) et suivies jusqu'à l'extraction. Les jets sont modélisés avec entraînement (décroissance de vitesse selon la distance), une diffusion turbulente, la flottabilité lorsque la température de soufflage diffère de l'ambiante, des rebonds sur les parois et les obstacles, une aspiration aux bouches d'extraction selon un écoulement de puits (v ∝ q/d² vers chaque reprise, proportionnelle à son débit : prédominante près de la bouche, quasi nulle aux coins — le trajet court soufflage→reprise est privilégié). L'âge de chaque particule est cumulé dans une grille volumique (~0,25 m) sur toute sa trajectoire (estimation de l'état permanent) ; l'âge moyen par cellule en déduit le taux de balayage local. Durée simulée : ${fmt(s.T,0)} s${state.sim.autoDuree?' (automatique, ≈ 4 × τ nominal, max 1 h)':''}.<br><br>
 <b>Attention :</b> ce rapport est un outil d'aide au dimensionnement et à la comparaison de configurations. Il ne se substitue pas à une étude CFD réglementaire ni aux exigences des normes et référentiels applicables (RE2020, NF EN 16798, etc.).</p>
 </body></html>`;
   $('#repFrame').srcdoc=doc;

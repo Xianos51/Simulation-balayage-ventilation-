@@ -487,8 +487,16 @@ function buildStreamlines(){
   const s=sim,env=s.env;
   s.streams=[];
   for(const b of env.sup){
+    const ax=slotAxes(b);
     for(let k=0;k<16;k++){
-      const p={x:b.pos[0]+b.dv[0]*0.03+gauss()*b.r0*0.5,y:b.pos[1]+b.dv[1]*0.03+gauss()*b.r0*0.5,z:b.pos[2]+b.dv[2]*0.03,
+      let ox,oy,oz;
+      if(b.type==='fente'){
+        const o=(k/15-0.5)*b.dim*0.94,w=gauss()*0.01;
+        ox=ax.long[0]*o+ax.wid[0]*w;oy=ax.long[1]*o+ax.wid[1]*w;oz=ax.long[2]*o+ax.wid[2]*w;
+      }else{
+        ox=gauss()*b.r0*0.5;oy=gauss()*b.r0*0.5;oz=gauss()*b.r0*0.5;
+      }
+      const p={x:b.pos[0]+b.dv[0]*0.03+ox,y:b.pos[1]+b.dv[1]*0.03+oy,z:b.pos[2]+b.dv[2]*0.03+oz,
         vx:b.dv[0]*b.v0,vy:b.dv[1]*b.v0,vz:b.dv[2]*b.v0,age:0,Tp:env.room.Tsouf,r0:b.r0};
       const pts=[];
       for(let st=0;st<700;st++){
@@ -556,7 +564,7 @@ function drawHeatmap(){
       if(pct)v=pct[idx];
       else{const ct=sim.cellTime[idx];if(ct>seuil)v=100*sim.tauN/(sim.cellAge[idx]/ct);}
     }
-    const[a,b]=P(i*csx,j*csy);
+    const[a,b]=P(i*csx,(j+1)*csy);
     x.fillStyle=sweepColor(v);
     x.fillRect(a,b,csx*sc-0.5,csy*sc-0.5);
   }
@@ -575,7 +583,7 @@ function drawHeatmap(){
     x.fillStyle=PALETTE[i%PALETTE.length]+'55';x.fillRect(a,b,a2-a,b2-b);
     x.strokeStyle=PALETTE[i%PALETTE.length];x.lineWidth=1.5;x.strokeRect(a,b,a2-a,b2-b);
     x.fillStyle='#fff';x.font='10px sans-serif';x.fillText(m.nom,a+3,b+12);
-    window.__hits.push({k:'m',i,x:a,y:b,w:a2-a,h:b2-b});
+    window.__hits.push({k:'m',i,x:Math.min(a,a2),y:Math.min(b,b2),w:Math.abs(a2-a),h:Math.abs(b2-b)});
   });
   state.supplies.forEach((b,i)=>{
     const pp=posOf(b,r);const[a,bb]=P(pp[0],pp[1]);const rad=Math.max(4,Math.min(b.dim,0.5)*sc/2);

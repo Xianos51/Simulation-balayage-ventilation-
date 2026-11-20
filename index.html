@@ -45,6 +45,7 @@ button.mini{padding:2px 7px;font-size:11px}
 #vues{flex:1;display:flex;gap:10px;min-height:0}
 #vues .pane{flex:1;background:var(--panel);border:1px solid var(--bord);border-radius:10px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
 #vues canvas{max-width:100%;max-height:100%}
+#view3d,#heatmap{touch-action:none}
 .pane h3{position:absolute;top:8px;left:10px;margin:0;font-size:12px;color:var(--mut);font-weight:600;z-index:2}
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:flex;flex-direction:column}
 #overlay[hidden]{display:none}
@@ -68,7 +69,7 @@ input[type=range]{padding:0}
     <h2>2. Bouches de soufflage (insufflation)</h2>
     <div id="soufflage"></div>
     <div class="btnline"><button class="mini" onclick="addSupply()">+ Ajouter une bouche de soufflage</button></div>
-    <p class="note">Plafond : X, Y = position (Z ignoré), direction réglable. Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur, soufflage horizontal vers l'intérieur de la pièce. Astuce : déplacez aussi les bouches, reprises et mobilier directement à la souris sur la vue de dessus.</p>
+    <p class="note">Plafond : X, Y = position (Z ignoré), direction réglable. Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur, soufflage horizontal vers l'intérieur de la pièce. « Rotation (°) » oriente la bouche autour de son axe de soufflage (essentiel pour les fentes : au plafond = rotation dans le plan horizontal, au mur = rotation autour du jet horizontal). Astuce : déplacez aussi les bouches, reprises et mobilier directement à la souris sur la vue de dessus.</p>
     <h2>3. Reprises d'air (extraction)</h2>
     <div id="extraction"></div>
     <div class="btnline"><button class="mini" onclick="addExtract()">+ Ajouter une reprise d'air</button></div>
@@ -119,8 +120,8 @@ let uid=1;
 const state={
   room:{L:6,l:4,H:2.6,Tamb:20,Tsouf:16},
   supplies:[
-    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:2,y:2,z:2.6,q:90,dir:'vert',azi:0},
-    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:4,y:2,z:2.6,q:90,dir:'vert',azi:0}
+    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:2,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0},
+    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:4,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0}
   ],
   extracts:[{id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:0.3,z:2.6,q:0}],
   mobilier:[
@@ -176,6 +177,15 @@ function posOf(m,r){
     default:return[x,y,r.H];
   }
 }
+function slotAxes(b){
+  const a=(b.ori||0)*Math.PI/180;
+  let u,v;
+  if(b.montage==='murX0'||b.montage==='murX1'){u=[0,1,0];v=[0,0,1];}
+  else if(b.montage==='murY0'||b.montage==='murY1'){u=[1,0,0];v=[0,0,1];}
+  else{u=[1,0,0];v=[0,1,0];}
+  const c=Math.cos(a),s=Math.sin(a);
+  return{long:[u[0]*c+v[0]*s,u[1]*c+v[1]*s,u[2]*c+v[2]*s],wid:[-u[0]*s+v[0]*c,-u[1]*s+v[1]*c,-u[2]*s+v[2]*c]};
+}
 function dirOf(b,r){
   switch(b.montage){
     case 'murX0':return[1,0,0];
@@ -209,7 +219,8 @@ function renderSupplies(){
       <label>Z (m)<input type="number" step="0.1" value="${b.z==null?r.H:b.z}" oninput="updSupply(${i},'z',this.value)"></label>
       <label>Q (m³/h)<input type="number" step="5" min="1" value="${b.q}" oninput="updSupply(${i},'q',this.value)"></label>
       <label>direction<select ${pl} onchange="updSupply(${i},'dir',this.value)">${Object.keys(DIR_LABEL).map(t=>`<option value="${t}" ${b.dir===t?'selected':''}>${DIR_LABEL[t]}</option>`).join('')}</select></label>
-      <label>azimut (°)<input ${pl} type="number" step="15" min="0" max="360" value="${b.azi||0}" oninput="updSupply(${i},'azi',this.value)"></label>
+      <label>azimut jet (°)<input ${pl} type="number" step="15" min="0" max="360" value="${b.azi||0}" oninput="updSupply(${i},'azi',this.value)"></label>
+      <label>rotation (°)<input type="number" step="15" min="-180" max="180" value="${b.ori||0}" oninput="updSupply(${i},'ori',this.value)"></label>
       <button class="mini" onclick="delSupply(${i})">✕</button></div>`;
   }).join('');
 }
@@ -251,20 +262,33 @@ function renderSimParams(){
     <label class="f"><span>Nombre de particules</span><input type="number" min="1000" max="30000" step="500" value="${s.nb}" oninput="updSim('nb',this.value)"></label>
     <label class="f"><span>Vitesse de lecture : <b id="lblVit">${s.vitesse}</b>×</span><input type="range" min="1" max="500" step="1" value="${s.vitesse}" oninput="updSim('vitesse',this.value);$('#lblVit').textContent=this.value.replace('.',',')"></label>`;
 }
-function updRoom(k,v){const x=parseFloat(v);if(!isNaN(x))state.room[k]=x;renderExtracts();}
-function updSupply(i,k,v){const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();return;}if(k==='dim2mm'){const x=parseFloat(v);b.dim2=isNaN(x)?null:x/1000;return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;}
-function delSupply(i){state.supplies.splice(i,1);renderSupplies();}
-function addSupply(){state.supplies.push({id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:state.room.L/2,y:state.room.l/2,z:state.room.H,q:60,dir:'vert',azi:0});renderSupplies();}
-function updExtract(i,k,v){const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();return;}if(k==='dim2mm'){const x=parseFloat(v);e.dim2=isNaN(x)?null:x/1000;return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;}
-function delExtract(i){state.extracts.splice(i,1);renderExtracts();}
-function addExtract(){state.extracts.push({id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:state.room.l-0.3,z:state.room.H,q:0});renderExtracts();}
-function updMeuble(i,k,v){const m=state.mobilier[i];if(k==='nom'){m.nom=v;return;}const x=parseFloat(v);if(!isNaN(x))m[k]=x;}
-function presetMeuble(i,p){const m=state.mobilier[i];m.preset=p;const pr=PRESETS[p];if(pr){m.L=pr.L;m.l=pr.l;m.H=pr.H;}renderMobilier();}
-function delMeuble(i){state.mobilier.splice(i,1);renderMobilier();}
-function addMeuble(){const n=state.mobilier.length+1;state.mobilier.push({id:uid++,preset:'Table',nom:'Élément '+n,x:state.room.L/2,y:state.room.l/2,z:0,L:1.6,l:0.8,H:0.75});renderMobilier();}
+function updRoom(k,v){const x=parseFloat(v);if(!isNaN(x))state.room[k]=x;syncTranche();renderExtracts();refreshViews();}
+function updSupply(i,k,v){const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);b.dim2=isNaN(x)?null:x/1000;return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;refreshViews();}
+function delSupply(i){state.supplies.splice(i,1);renderSupplies();refreshViews();}
+function addSupply(){state.supplies.push({id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:state.room.L/2,y:state.room.l/2,z:state.room.H,q:60,dir:'vert',azi:0,ori:0});renderSupplies();refreshViews();}
+function updExtract(i,k,v){const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);e.dim2=isNaN(x)?null:x/1000;return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;refreshViews();}
+function delExtract(i){state.extracts.splice(i,1);renderExtracts();refreshViews();}
+function addExtract(){state.extracts.push({id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:state.room.l-0.3,z:state.room.H,q:0});renderExtracts();refreshViews();}
+function updMeuble(i,k,v){const m=state.mobilier[i];if(k==='nom'){m.nom=v;return;}const x=parseFloat(v);if(!isNaN(x))m[k]=x;refreshViews();}
+function presetMeuble(i,p){const m=state.mobilier[i];m.preset=p;const pr=PRESETS[p];if(pr){m.L=pr.L;m.l=pr.l;m.H=pr.H;}renderMobilier();refreshViews();}
+function delMeuble(i){state.mobilier.splice(i,1);renderMobilier();refreshViews();}
+function addMeuble(){const n=state.mobilier.length+1;state.mobilier.push({id:uid++,preset:'Table',nom:'Élément '+n,x:state.room.L/2,y:state.room.l/2,z:0,L:1.6,l:0.8,H:0.75});renderMobilier();refreshViews();}
 function updSim(k,v){const x=parseFloat(v);if(!isNaN(x))state.sim[k]=x;}
 function updAuto(v){state.sim.autoDuree=v;const el=$('#inpDuree');if(el)el.disabled=v;}
 function changerTranche(v){state.sim.tranche=parseFloat(v);$('#lblTranche').textContent=fmt(parseFloat(v),1);drawHeatmap();}
+let _rvPending=false;
+function refreshViews(){
+  if(_rvPending)return;_rvPending=true;
+  requestAnimationFrame(()=>{_rvPending=false;drawHeatmap();render3D();});
+}
+function syncTranche(){
+  const t=$('#tranche');if(!t)return;
+  const mx=Math.max(0.2,Math.round((state.room.H-0.2)*10)/10);
+  t.max=mx;t.min=0.2;
+  if(state.sim.tranche>mx)state.sim.tranche=mx;
+  t.value=state.sim.tranche;
+  $('#lblTranche').textContent=fmt(state.sim.tranche,1);
+}
 function setView(v){
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   $('#pane3d').style.display=(v==='3d'||v==='both')?'flex':'none';
@@ -314,13 +338,16 @@ function emitParticle(){
   let pick=Math.random()*tot, b=env.sup[0];
   for(const c of env.sup){pick-=c.q;if(pick<=0){b=c;break;}}
   let px=b.pos[0]+b.dv[0]*0.03,py=b.pos[1]+b.dv[1]*0.03,pz=b.pos[2]+b.dv[2]*0.03;
-  if(!b.montage||b.montage==='plafond'){
-    px+=b.type==='fente'?rnd(-b.dim/2,b.dim/2):gauss()*b.r0*0.7;
-    py+=b.type==='fente'?rnd(-0.01,0.01):gauss()*b.r0*0.7;
+  if(b.type==='fente'){
+    const ax=slotAxes(b),o=rnd(-b.dim/2,b.dim/2),w=gauss()*0.01;
+    px+=ax.long[0]*o+ax.wid[0]*w;py+=ax.long[1]*o+ax.wid[1]*w;pz+=ax.long[2]*o+ax.wid[2]*w;
+  }else if(!b.montage||b.montage==='plafond'){
+    px+=gauss()*b.r0*0.7;py+=gauss()*b.r0*0.7;
   }else{
     pz+=rnd(-0.05,0.05);
-    if(b.montage==='murX0'||b.montage==='murX1')py+=rnd(-Math.min(b.dim,0.6)/2,Math.min(b.dim,0.6)/2);
-    else px+=rnd(-Math.min(b.dim,0.6)/2,Math.min(b.dim,0.6)/2);
+    const half=Math.min(b.dim,0.6)/2;
+    if(b.montage==='murX0'||b.montage==='murX1')py+=rnd(-half,half);
+    else px+=rnd(-half,half);
   }
   s.parts.push({
     x:clamp(px,0.02,env.room.L-0.02),y:clamp(py,0.02,env.room.l-0.02),z:clamp(pz,0.02,env.room.H-0.02),
@@ -404,6 +431,7 @@ function tick(ts){
   render3D();
   if(ts-lastProg>400){
     lastProg=ts;
+    drawHeatmap();
     const el=$('#progress');
     if(el&&sim)el.textContent='Simulation en cours : '+fmt(sim.tSim,0)+' / '+fmt(sim.T,0)+' s ('+Math.round(100*sim.tSim/sim.T)+' %) — particules restantes : '+sim.parts.length;
   }
@@ -459,8 +487,16 @@ function buildStreamlines(){
   const s=sim,env=s.env;
   s.streams=[];
   for(const b of env.sup){
+    const ax=slotAxes(b);
     for(let k=0;k<16;k++){
-      const p={x:b.pos[0]+b.dv[0]*0.03+gauss()*b.r0*0.5,y:b.pos[1]+b.dv[1]*0.03+gauss()*b.r0*0.5,z:b.pos[2]+b.dv[2]*0.03,
+      let ox,oy,oz;
+      if(b.type==='fente'){
+        const o=(k/15-0.5)*b.dim*0.94,w=gauss()*0.01;
+        ox=ax.long[0]*o+ax.wid[0]*w;oy=ax.long[1]*o+ax.wid[1]*w;oz=ax.long[2]*o+ax.wid[2]*w;
+      }else{
+        ox=gauss()*b.r0*0.5;oy=gauss()*b.r0*0.5;oz=gauss()*b.r0*0.5;
+      }
+      const p={x:b.pos[0]+b.dv[0]*0.03+ox,y:b.pos[1]+b.dv[1]*0.03+oy,z:b.pos[2]+b.dv[2]*0.03+oz,
         vx:b.dv[0]*b.v0,vy:b.dv[1]*b.v0,vz:b.dv[2]*b.v0,age:0,Tp:env.room.Tsouf,r0:b.r0};
       const pts=[];
       for(let st=0;st<700;st++){
@@ -515,16 +551,20 @@ function drawHeatmap(){
   const ox=pad+(aw-r.L*sc)/2,oy=pad+(ah-r.l*sc)/2;
   window.__hm={ox,oy,sc};window.__hits=[];
   const P=(px,py)=>[ox+px*sc,oy+(r.l-py)*sc];
-  let nx,ny,csx,csy,pct;
-  if(sim&&sim.results){nx=sim.results.nx;ny=sim.results.ny;csx=sim.results.csx;csy=sim.results.csy;pct=sim.results.pct;}
-  else{nx=Math.max(6,Math.round(r.L/0.25));ny=Math.max(6,Math.round(r.l/0.25));csx=r.L/nx;csy=r.l/ny;pct=null;}
+  let nx,ny,nz,csx,csy,csz,pct;
+  if(sim){nx=sim.nx;ny=sim.ny;nz=sim.nz;csx=sim.csx;csy=sim.csy;csz=sim.csz;pct=sim.done?sim.results.pct:null;}
+  else{nx=Math.max(6,Math.round(r.L/0.25));ny=Math.max(6,Math.round(r.l/0.25));nz=Math.max(4,Math.round(r.H/0.25));csx=r.L/nx;csy=r.l/ny;csz=r.H/nz;pct=null;}
   const z=state.sim.tranche;
-  let k=0;
-  if(sim&&sim.results){k=clamp(Math.floor(z/r.H*sim.results.nz),0,sim.results.nz-1);}
+  const k=clamp(Math.floor(z/csz),0,nz-1);
+  const seuil=sim&&!sim.done?0.8:1.5;
   for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
     let v=null;
-    if(pct){const idx=i+nx*(j+ny*k);v=pct[idx];}
-    const[a,b]=P(i*csx,j*csy);
+    if(sim){
+      const idx=i+nx*(j+ny*k);
+      if(pct)v=pct[idx];
+      else{const ct=sim.cellTime[idx];if(ct>seuil)v=100*sim.tauN/(sim.cellAge[idx]/ct);}
+    }
+    const[a,b]=P(i*csx,(j+1)*csy);
     x.fillStyle=sweepColor(v);
     x.fillRect(a,b,csx*sc-0.5,csy*sc-0.5);
   }
@@ -543,16 +583,30 @@ function drawHeatmap(){
     x.fillStyle=PALETTE[i%PALETTE.length]+'55';x.fillRect(a,b,a2-a,b2-b);
     x.strokeStyle=PALETTE[i%PALETTE.length];x.lineWidth=1.5;x.strokeRect(a,b,a2-a,b2-b);
     x.fillStyle='#fff';x.font='10px sans-serif';x.fillText(m.nom,a+3,b+12);
-    window.__hits.push({k:'m',i,x:a,y:b,w:a2-a,h:b2-b});
+    window.__hits.push({k:'m',i,x:Math.min(a,a2),y:Math.min(b,b2),w:Math.abs(a2-a),h:Math.abs(b2-b)});
   });
   state.supplies.forEach((b,i)=>{
     const pp=posOf(b,r);const[a,bb]=P(pp[0],pp[1]);const rad=Math.max(4,Math.min(b.dim,0.5)*sc/2);
     x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;
-    x.beginPath();
-    if(b.type==='rond')x.arc(a,bb,rad,0,7);
-    else if(b.type==='carre'||b.type==='grille')x.rect(a-rad,bb-rad,rad*2,rad*2);
-    else{const len=Math.min(b.dim,Math.max(r.L,r.l))*sc;x.rect(a-len/2,bb-3,len,6);}
-    x.fill();x.stroke();
+    const ax=slotAxes(b);
+    if(b.type==='rond'){x.beginPath();x.arc(a,bb,rad,0,7);x.fill();x.stroke();}
+    else if(b.type==='carre'||b.type==='grille'){x.beginPath();x.rect(a-rad,bb-rad,rad*2,rad*2);x.fill();x.stroke();}
+    else{
+      const hl=Math.min(b.dim,Math.max(r.L,r.l))/2;
+      const[a1,b1]=P(pp[0]-ax.long[0]*hl,pp[1]-ax.long[1]*hl),[a2,b2]=P(pp[0]+ax.long[0]*hl,pp[1]+ax.long[1]*hl);
+      x.save();x.strokeStyle='#34d399';x.fillStyle='#34d399';x.lineWidth=6;x.lineCap='round';
+      x.beginPath();x.moveTo(a1,b1);x.lineTo(a2,b2);x.stroke();x.restore();
+    }
+    const d=dirOf(b,r),dl=Math.hypot(d[0],d[1]);
+    if(dl>0.01){
+      const t0=Math.max(rad,6)/sc;
+      const[s1x,s1y]=P(pp[0]+d[0]/dl*t0,pp[1]+d[1]/dl*t0),[s2x,s2y]=P(pp[0]+d[0]/dl*0.5,pp[1]+d[1]/dl*0.5);
+      const ang=Math.atan2(s2y-s1y,s2x-s1x);
+      x.strokeStyle='#d1fae5';x.lineWidth=1.5;
+      x.beginPath();x.moveTo(s1x,s1y);x.lineTo(s2x,s2y);
+      x.moveTo(s2x,s2y);x.lineTo(s2x-8*Math.cos(ang-0.4),s2y-8*Math.sin(ang-0.4));
+      x.moveTo(s2x,s2y);x.lineTo(s2x-8*Math.cos(ang+0.4),s2y-8*Math.sin(ang+0.4));x.stroke();
+    }
     x.fillStyle='#d1fae5';x.font='bold 10px sans-serif';x.fillText(b.q+' m³/h',a+Math.max(rad,12)+3,bb+3);
     window.__hits.push({k:'s',i,x:a,y:bb,r:15});
   });
@@ -606,7 +660,7 @@ function render3D(){
   const dpr=window.devicePixelRatio||1;
   const w=pane.clientWidth,h=pane.clientHeight;
   if(w<50||h<50)return;
-  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);}
+  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);c.style.width=w+'px';c.style.height=h+'px';}
   const x=c.getContext('2d');
   x.setTransform(dpr,0,0,dpr,0,0);
   x.clearRect(0,0,w,h);
@@ -667,17 +721,25 @@ function render3D(){
     });
   });
   state.supplies.forEach(b=>{
-    const p=proj(posOf(b,r));
+    const pos=posOf(b,r);
+    const p=proj(pos);
     if(!p)return;
     const sz=Math.min(b.dim||0.2,0.8);
     const rad=Math.max(3,f*sz/(2*p[2]));
     items.push({d:p[2],draw:()=>{
-      x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;x.beginPath();
-      if(b.type==='rond')x.arc(p[0],p[1],rad,0,7);
-      else if(b.type==='carre'||b.type==='grille')x.rect(p[0]-rad,p[1]-rad,rad*2,rad*2);
-      else{const len=Math.min(b.dim,Math.max(r.L,r.l))*f/p[2];const th=Math.max(3,rad*0.7);x.save();x.translate(p[0],p[1]);x.rotate((b.azi||0)*Math.PI/180);x.rect(-len/2,-th/2,len,th);x.restore();}
-      x.fill();x.stroke();
+      x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;
+      if(b.type==='rond'){x.beginPath();x.arc(p[0],p[1],rad,0,7);x.fill();x.stroke();}
+      else if(b.type==='carre'||b.type==='grille'){x.beginPath();x.rect(p[0]-rad,p[1]-rad,rad*2,rad*2);x.fill();x.stroke();}
+      else{
+        const ax=slotAxes(b),hl=Math.min(b.dim,Math.max(r.L,r.l))/2;
+        const q1=proj([pos[0]-ax.long[0]*hl,pos[1]-ax.long[1]*hl,pos[2]-ax.long[2]*hl]);
+        const q2=proj([pos[0]+ax.long[0]*hl,pos[1]+ax.long[1]*hl,pos[2]+ax.long[2]*hl]);
+        if(q1&&q2){x.save();x.strokeStyle='#34d399';x.lineWidth=Math.max(3,rad*0.7);x.lineCap='round';x.beginPath();x.moveTo(q1[0],q1[1]);x.lineTo(q2[0],q2[1]);x.stroke();x.restore();}
+      }
     }});
+    const dv=dirOf(b,r);
+    const pe=proj([pos[0]+dv[0]*0.35,pos[1]+dv[1]*0.35,pos[2]+dv[2]*0.35]);
+    if(pe)items.push({d:(p[2]+pe[2])/2,draw:()=>{x.strokeStyle='rgba(209,250,229,.8)';x.lineWidth=1.5;x.beginPath();x.moveTo(p[0],p[1]);x.lineTo(pe[0],pe[1]);x.stroke();}});
   });
   state.extracts.forEach(e=>{
     const p=proj(posOf(e,r));
@@ -736,9 +798,9 @@ function render3D(){
 (function initControls(){
   const c=$('#view3d');
   let drag=false,lx=0,ly=0;
-  c.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY;});
-  window.addEventListener('mouseup',()=>drag=false);
-  window.addEventListener('mousemove',e=>{
+  c.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;c.setPointerCapture(e.pointerId);});
+  window.addEventListener('pointerup',()=>drag=false);
+  window.addEventListener('pointermove',e=>{
     if(!drag)return;
     view.theta+=(e.clientX-lx)*0.008;
     lx=e.clientX;ly=e.clientY;
@@ -756,12 +818,12 @@ function render3D(){
   let drag=null;
   function toCanvas(e){const rc=hm.getBoundingClientRect();return[(e.clientX-rc.left)*hm.width/rc.width,(e.clientY-rc.top)*hm.height/rc.height];}
   function hitAt(mx,my){const hits=window.__hits||[];for(let k=hits.length-1;k>=0;k--){const h=hits[k];if(h.r?Math.hypot(mx-h.x,my-h.y)<=h.r:(mx>=h.x&&mx<=h.x+h.w&&my>=h.y&&my<=h.y+h.h))return h;}return null;}
-  hm.addEventListener('mousedown',e=>{
+  hm.addEventListener('pointerdown',e=>{
     if(sim&&sim.running)return;
     const c=toCanvas(e);const h=hitAt(c[0],c[1]);
-    if(h){drag=h;hm.style.cursor='grabbing';e.preventDefault();}
+    if(h){drag=h;hm.style.cursor='grabbing';e.preventDefault();hm.setPointerCapture(e.pointerId);}
   });
-  window.addEventListener('mousemove',e=>{
+  window.addEventListener('pointermove',e=>{
     const c=toCanvas(e);
     if(!drag){hm.style.cursor=hitAt(c[0],c[1])?'grab':'';return;}
     const g=window.__hm;if(!g)return;
@@ -770,9 +832,9 @@ function render3D(){
     if(drag.k==='s'){const b=state.supplies[drag.i];b.x=rx;b.y=ry;}
     else if(drag.k==='e'){const el=state.extracts[drag.i];el.x=rx;el.y=ry;}
     else{const m=state.mobilier[drag.i];m.x=rx;m.y=ry;}
-    drawHeatmap();render3D();
+    refreshViews();
   });
-  window.addEventListener('mouseup',()=>{
+  window.addEventListener('pointerup',()=>{
     if(drag){drag=null;hm.style.cursor='';renderSupplies();renderExtracts();renderMobilier();}
   });
 })();
@@ -783,7 +845,7 @@ function genererRapport(){
   const img3D=$('#view3d').toDataURL('image/png');
   const date=new Date().toLocaleString('fr-FR');
   const rowsS=state.supplies.map((b,i)=>{
-    const dim=b.type==='rond'?`Ø ${fmt(b.dim*1000,0)} mm`:b.type==='fente'?`fente ${fmt(b.dim,2)} m × ${fmt((b.dim2||0.02)*1000,0)} mm`:`côté ${fmt(b.dim*1000,0)} mm`;
+    const dim=b.type==='rond'?`Ø ${fmt(b.dim*1000,0)} mm`:b.type==='fente'?`fente ${fmt(b.dim,2)} m × ${fmt((b.dim2||0.02)*1000,0)} mm (rotation ${fmt(b.ori||0,0)}°)`:`côté ${fmt(b.dim*1000,0)} mm`;
     const pos=posOf(b,state.room);
     const dirTxt=(!b.montage||b.montage==='plafond')?DIR_LABEL[b.dir]+' (az. '+fmt(b.azi||0,0)+'°)':'horizontale vers l\'intérieur';
     return`<tr><td>${i+1}</td><td>${TYPE_LABEL[b.type]}</td><td>${dim}</td><td>${MONT_LABEL[b.montage||'plafond']}</td><td>${fmt(pos[0],2)} ; ${fmt(pos[1],2)} ; z=${fmt(pos[2],2)}</td><td>${fmt(b.q,0)} m³/h</td><td>${dirTxt}</td><td>${fmt(v0Of(b),1)} m/s</td></tr>`;

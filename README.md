@@ -48,7 +48,12 @@ Deux façons, sans rien installer (un navigateur suffit) :
    à la cellule libre la plus proche) ou si aucun chemin d’air ne relie soufflages et
    reprises (volume scindé).
 7. **Lecture** : heat map 2D par tranche z (balayage / âge / température / vitesse),
-   vue 3D avec lignes de courant, indicateurs chiffrés en haut.
+   vue 3D de présentation en volume (sol coloré par le champ, cônes de jets, lignes de
+   courant et **particules animées** à la vitesse locale), **▶ Mode démo** (rotation
+   automatique de la caméra + balayage de la tranche z — pour les présentations clients),
+   **⚡ aperçu instantané** : la heat map se met à jour en < 1 s pendant qu'on déplace
+   bouches/reprises/meubles à la souris, et la résolution complète se lance au relâchement,
+   indicateurs chiffrés en haut.
 8. **Scénarios enregistrés** : sauvegardez la configuration courante sous un nom
    (localStorage), rechargez-la plus tard, supprimez-la.
 9. **Historique des runs** : chaque résolution est archivée automatiquement (30 derniers runs)

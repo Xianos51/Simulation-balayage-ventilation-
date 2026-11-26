@@ -101,6 +101,7 @@ input[type=range]{padding:0}
       <button id="btnPause" onclick="pauseReprendre()" disabled>Pause</button>
       <button onclick="reinit()">Réinitialiser</button>
     </div>
+    <div class="btnline"><label style="font-size:11.5px;color:var(--mut);display:flex;gap:6px;align-items:center"><input type="checkbox" id="chkApercu" style="width:auto" checked> ⚡ Aperçu instantané : pendant le déplacement d'une bouche / reprise / meuble à la souris, une prévision rapide (< 1 s) se met à jour en direct ; la résolution complète se lance au relâchement.</label></div>
     <p class="note" id="progress">Le champ de vitesse, l'âge de l'air et la température sont résolus directement en régime permanent sur une grille 3D (pas de simulation transitoire tronquée).</p>
     <h2>7. Affichage</h2>
     <div id="affparams"></div>
@@ -142,6 +143,7 @@ input[type=range]{padding:0}
       <button data-v="both" class="on" onclick="setView('both')">3D + Heat map</button>
       <button data-v="3d" onclick="setView('3d')">Vue 3D</button>
       <button data-v="2d" onclick="setView('2d')">Heat map 2D</button>
+      <button id="btnDemo" onclick="toggleDemo()" title="Rotation lente de la caméra + balayage automatique de la tranche z — pour laisser tourner en salle de réunion. Un clic dans la vue 3D arrête la démo.">▶ Mode démo</button>
     </div>
     <div id="vues">
       <div class="pane" id="pane3d"><h3>Vue 3D — lignes de courant (glisser = tourner, molette = zoom)</h3><canvas id="view3d"></canvas></div>
@@ -241,13 +243,13 @@ function serializeRun(run){
   if(!run)return null;
   const ta=a=>Array.from(a);
   return {G:{nx:run.G.nx,ny:run.G.ny,nz:run.G.nz,res:run.G.res,N:run.G.N,tauN:run.G.tauN,ACH:run.G.ACH,volRoom:run.G.volRoom,Qtot:run.G.Qtot,
-    solid:ta(run.G.solid),S:ta(run.G.S),vc:ta(run.G.vc),dirMask:ta(run.G.dirMask),extMask:ta(run.G.extMask)},
+    solid:ta(run.G.solid),wall:run.G.wall?ta(run.G.wall):null,S:ta(run.G.S),vc:ta(run.G.vc),dirMask:ta(run.G.dirMask),extMask:ta(run.G.extMask)},
     sim:{age:ta(run.sim.age),temp:ta(run.sim.temp),res:run.sim.res,streams:run.sim.streams,conv:run.sim.conv,warn:run.sim.warn,connected:run.sim.connected}};
 }
 function deserializeRun(o){
   if(!o||!o.G||!o.sim)return null;
   return {G:{nx:o.G.nx,ny:o.G.ny,nz:o.G.nz,res:o.G.res,N:o.G.N,tauN:o.G.tauN,ACH:o.G.ACH,volRoom:o.G.volRoom,Qtot:o.G.Qtot,
-    solid:new Uint8Array(o.G.solid),S:new Float64Array(o.G.S),vc:new Float64Array(o.G.vc),dirMask:new Uint8Array(o.G.dirMask),extMask:new Uint8Array(o.G.extMask)},
+    solid:new Uint8Array(o.G.solid),wall:o.G.wall?new Uint8Array(o.G.wall):null,S:new Float64Array(o.G.S),vc:new Float64Array(o.G.vc),dirMask:new Uint8Array(o.G.dirMask),extMask:new Uint8Array(o.G.extMask)},
     sim:{age:new Float64Array(o.sim.age),temp:new Float64Array(o.sim.temp),res:o.sim.res,streams:o.sim.streams||[],conv:o.sim.conv||[],warn:o.sim.warn||[],connected:o.sim.connected}};
 }
 function simLiteOf(run){return run?{res:run.sim.res,conv:run.sim.conv,warn:run.sim.warn,connected:run.sim.connected}:null;}
@@ -1503,7 +1505,7 @@ function buildWorkerCode(){
     +'    post({type:"progress",f:1,msg:"Terminé."});\n'
     +'    post({type:"done",\n'
     +'      G:{nx:G.nx,ny:G.ny,nz:G.nz,res:G.res,N:G.N,tauN:G.tauN,ACH:G.ACH,volRoom:G.volRoom,Qtot:G.Qtot,\n'
-    +'         solid:G.solid,S:G.S,vc:G.vc,dirMask:G.dirMask,extMask:G.extMask},\n'
+    +'         solid:G.solid,wall:G.wall,S:G.S,vc:G.vc,dirMask:G.dirMask,extMask:G.extMask},\n'
     +'      sim:{age:sim.age,temp:sim.temp,res:sim.res,streams:sim.streams,conv:sim.conv,warn:sim.warn,connected:sim.connected}\n'
     +'    });\n'
     +'  }catch(err){\n'
@@ -1596,6 +1598,35 @@ function pauseReprendre(){
   _worker.postMessage({cmd:paused?'pause':'resume'});
   $('#btnPause').textContent=paused?'Reprendre':'Pause';
 }
+/* --- Aperçu instantané (mode présentation) : résolution rapide sur le thread principal
+   (champ potentiel + jets + flottabilité + transport court) pendant qu'on déplace une
+   ouverture/meuble à la souris ; la résolution complète (worker) se lance au relâchement. --- */
+let _apLast=0,_apTimer=0;
+function demandeApercu(){
+  if(solving)return;
+  const el=$('#chkApercu');if(!el||!el.checked)return;
+  if(G.N>45000)return; /* grille trop fine pour un aperçu fluide */
+  const now=Date.now();
+  if(!_apTimer&&now-_apLast>450){_apLast=now;apercuRapide();}
+  else if(!_apTimer)_apTimer=setTimeout(()=>{_apTimer=0;demandeApercu();},470);
+}
+function apercuRapide(){
+  if(solving||!state.extracts.length)return;
+  try{
+    buildGrid();buildWindowData();computeSources();buildHeatSources();
+    const phi=solvePoissonField(G.S,false,1500,3e-4);
+    vFromPhi(phi);addJets();project(1500,3e-4);
+    cellVel();distParoi();computeNuT();
+    let age=solveTransport('age',1800,3e-4),temp=solveTransport('T',1800,3e-4);
+    addBuoyancy(temp);project(1500,3e-4);cellVel();computeNuT();
+    age=solveTransport('age',1500,3e-4);temp=solveTransport('T',1500,3e-4);
+    sim={age:age,temp:temp,streams:[],conv:[],warn:(G.warn||[]).slice(),preview:true};
+    computeResults();buildStreamlines();
+    $('#btnRapport').disabled=false;$('#btnPng').disabled=false;$('#btnCsv').disabled=false;
+    setP(1,'⚡ Aperçu rapide (approximatif) — relâchez la souris pour lancer la résolution complète.');
+    updateStats();drawHeatmap();render3D();
+  }catch(e){}
+}
 function reinitUI(){
   $('#btnLancer').disabled=false;$('#btnTout').disabled=false;$('#btnPause').disabled=true;$('#btnPause').textContent='Pause';
   $('#btnRapport').disabled=!(sim&&sim.age);$('#btnPng').disabled=!(sim&&sim.age);$('#btnCsv').disabled=!(sim&&sim.age);
@@ -1611,6 +1642,10 @@ function reinit(){
 }
 function updateStats(){
   const el=$('#stats');
+  if(sim&&sim.preview){
+    el.innerHTML='<div class="stat" style="border-color:var(--warn)"><b style="color:var(--warn)">⚡ Aperçu</b><span>Prévision rapide approximative — lancez « Résoudre le champ permanent » pour les métriques validées</span></div>';
+    return;
+  }
   if(!sim||!sim.res){
     el.innerHTML=['τ nominal (V/Q)','Renouvellement (ACH)','Âge moyen de l’air','ERE','Vol. balayage ≥ 100 %','Vol. zones mortes (âge>2τ)','Vitesse moy. zone occ.','Temp. moy. zone occ.','Âge aux reprises (bilan)','Déperditions fenêtres','Résidu div max'].map(s=>`<div class="stat"><b>—</b><span>${s}</span></div>`).join('');
     return;
@@ -1940,6 +1975,7 @@ function telechargerHeatmap(){
 }
 function exporterCSV(){
   if(!sim||!sim.age)return;
+  if(sim.preview){alert('Un aperçu rapide (approximatif) est affiché — lancez « Résoudre le champ permanent » avant d\'exporter les champs.');return;}
   const res=G.res,{nx,ny,nz}=G;
   const lines=['x,y,z,age_s,balayage_pct,temp_C,vx,vy,vz,v_ms,solid'];
   for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
@@ -1955,11 +1991,22 @@ function exporterCSV(){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='champs-3d-balayage.csv';a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
-/* ================= Visualisation 3D ================= */
+/* ================= Visualisation 3D — mode présentation ================= */
 let cam={yaw:0.7,pitch:0.65,dist:14};
-/* Scène 3D commune (vue live + vue isométrique du rapport) : prisme du polygone, mobilier,
-   fenêtres sur les bords, lignes de courant, bouches. */
-function draw3DScene(ctx,w,h,camObj){
+let demo=false;                   /* mode démo : rotation auto + balayage de tranche */
+let _animOn=false,_lastT=0,_demoT=0;
+let _parts=null,_lenCache=null,_lenKey=null;
+const LIGHT=[-0.42,-0.55,0.72];
+function shadeHex(hex,f){
+  const n=parseInt(hex.slice(1),16);
+  const r=Math.min(255,Math.round(((n>>16)&255)*f)),g2=Math.min(255,Math.round(((n>>8)&255)*f)),b=Math.min(255,Math.round((n&255)*f));
+  return 'rgb('+r+','+g2+','+b+')';
+}
+/* Scène 3D commune (vue live + vue isométrique du rapport) : sol coloré par le champ,
+   parois intérieures visibles, meubles en volume éclairés, cônes de jets translucides,
+   lignes de courant + particules animées, bouches/reprises. */
+function draw3DScene(ctx,w,h,camObj,opts){
+  opts=opts||{};
   ctx.fillStyle='#0b1220';ctx.fillRect(0,0,w,h);
   const r=state.room,poly=polyOf(r),bb=bboxOf(poly);
   const cx=(bb.x0+bb.x1)/2,cy=(bb.y0+bb.y1)/2,cz=r.H/2;
@@ -1973,65 +2020,169 @@ function draw3DScene(ctx,w,h,camObj){
     const s=camObj.dist/Math.max(2,camObj.dist-y2);
     return [w/2+x1*s*k,h/2-z2*s*k];
   }
-  function polyEdges(z0,z1,col){
-    ctx.strokeStyle=col;ctx.lineWidth=1;ctx.beginPath();
-    poly.forEach((p,i)=>{const Q=P(p[0],p[1],z0);if(i===0)ctx.moveTo(Q[0],Q[1]);else ctx.lineTo(Q[0],Q[1]);});
-    ctx.closePath();ctx.stroke();
-    if(z1!==z0){
-      ctx.beginPath();
-      poly.forEach((p,i)=>{const Q=P(p[0],p[1],z1);if(i===0)ctx.moveTo(Q[0],Q[1]);else ctx.lineTo(Q[0],Q[1]);});
-      ctx.closePath();ctx.stroke();
-      poly.forEach(p=>{const A=P(p[0],p[1],z0),B=P(p[0],p[1],z1);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();});
+  const cp2=Math.cos(camObj.pitch),sp2=Math.sin(camObj.pitch);
+  const camDir=[Math.sin(camObj.yaw)*cp2,Math.cos(camObj.yaw)*cp2,sp2];
+  const g=state.sim.grandeur;
+  const hasField=!!(sim&&sim.age&&G.N);
+  const res=(G.res||state.sim.res);
+  /* 1) sol : une tuile par cellule de la couche la plus basse, colorée par le champ */
+  if(hasField){
+    for(let j=0;j<G.ny;j++)for(let i=0;i<G.nx;i++){
+      const c=idx(i,j,0);
+      if(G.wall&&G.wall[c])continue;
+      const Q=[P(i*res,j*res,0),P((i+1)*res,j*res,0),P((i+1)*res,(j+1)*res,0),P(i*res,(j+1)*res,0)];
+      ctx.beginPath();ctx.moveTo(Q[0][0],Q[0][1]);
+      for(let q=1;q<4;q++)ctx.lineTo(Q[q][0],Q[q][1]);
+      ctx.closePath();
+      ctx.fillStyle=G.solid[c]?'#22304a':colorScale(g,grandeurVal(c));
+      ctx.fill();
     }
+  }else{
+    ctx.beginPath();
+    poly.forEach((p,i)=>{const Q=P(p[0],p[1],0);if(i===0)ctx.moveTo(Q[0],Q[1]);else ctx.lineTo(Q[0],Q[1]);});
+    ctx.closePath();ctx.fillStyle='#16202e';ctx.fill();
   }
-  const edges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-  function box(c2,col){
-    ctx.strokeStyle=col;ctx.lineWidth=1;
-    for(const [a,b] of edges){const A=P(c2[a][0],c2[a][1],c2[a][2]),B=P(c2[b][0],c2[b][1],c2[b][2]);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();}
+  /* 2) parois intérieures visibles (normale sortante tournée vers la caméra) */
+  for(let e=0;e<poly.length;e++){
+    const ed=edgeOf(poly,e);
+    const facing=ed.out[0]*camDir[0]+ed.out[1]*camDir[1];
+    if(facing<=0.03)continue;
+    const A=P(ed.A[0],ed.A[1],0),B=P(ed.B[0],ed.B[1],0),C=P(ed.B[0],ed.B[1],r.H),D2=P(ed.A[0],ed.A[1],r.H);
+    const shade=0.5+0.5*Math.max(0,ed.out[0]*LIGHT[0]+ed.out[1]*LIGHT[1]+0.25);
+    ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.lineTo(C[0],C[1]);ctx.lineTo(D2[0],D2[1]);ctx.closePath();
+    ctx.fillStyle='rgba(56,78,108,'+(0.22+0.3*shade)+')';ctx.fill();
+    ctx.strokeStyle='#3d4c63';ctx.lineWidth=1;ctx.stroke();
   }
-  polyEdges(0,r.H,'#3d4c63');
-  for(const m of state.mobilier)box([[m.x,m.y,m.z],[m.x+m.L,m.y,m.z],[m.x+m.L,m.y+m.l,m.z],[m.x,m.y+m.l,m.z],[m.x,m.y,m.z+m.H],[m.x+m.L,m.y,m.z+m.H],[m.x+m.L,m.y+m.l,m.z+m.H],[m.x,m.y+m.l,m.z+m.H]],'#5b6b80');
-  // Fenêtres : rectangles ambrés sur les bords verticaux du polygone
-  for(const w of (state.windows||[])){
-    const e=edgeOf(poly,clamp(w.edge==null?0:w.edge,0,poly.length-1));
-    const a0=w.pos||0,a1=a0+(w.larg||0),z0=w.z==null?0:w.z,z1=z0+(w.haut||0);
-    const c2=[[e.A[0]+e.dx*a0,e.A[1]+e.dy*a0,z0],[e.A[0]+e.dx*a1,e.A[1]+e.dy*a1,z0],[e.A[0]+e.dx*a1,e.A[1]+e.dy*a1,z1],[e.A[0]+e.dx*a0,e.A[1]+e.dy*a0,z1]];
-    const P0=P(c2[0][0],c2[0][1],c2[0][2]);
-    ctx.beginPath();ctx.moveTo(P0[0],P0[1]);
+  /* 2b) fenêtres : rectangles ambrés sur les bords visibles */
+  for(const w2 of (state.windows||[])){
+    const ed=edgeOf(poly,clamp(w2.edge==null?0:w2.edge,0,poly.length-1));
+    if(ed.out[0]*camDir[0]+ed.out[1]*camDir[1]<=0.03)continue;
+    const a0=w2.pos||0,a1=a0+(w2.larg||0),z0=w2.z==null?0:w2.z,z1=z0+(w2.haut||0);
+    const c2=[[ed.A[0]+ed.dx*a0,ed.A[1]+ed.dy*a0,z0],[ed.A[0]+ed.dx*a1,ed.A[1]+ed.dy*a1,z0],[ed.A[0]+ed.dx*a1,ed.A[1]+ed.dy*a1,z1],[ed.A[0]+ed.dx*a0,ed.A[1]+ed.dy*a0,z1]];
+    ctx.beginPath();ctx.moveTo(P(c2[0][0],c2[0][1],c2[0][2])[0],P(c2[0][0],c2[0][1],c2[0][2])[1]);
     for(let q=1;q<4;q++){const Q=P(c2[q][0],c2[q][1],c2[q][2]);ctx.lineTo(Q[0],Q[1]);}
     ctx.closePath();
     ctx.fillStyle='rgba(251,191,36,0.30)';ctx.fill();
     ctx.strokeStyle='#fbbf24';ctx.lineWidth=1.5;ctx.stroke();
   }
+  /* 3) meubles : boîtes remplies, faces visibles triées par profondeur */
+  const faces=[];
+  const BOXF=[[0,[0,0,-1]],[1,[0,0,1]],[2,[0,-1,0]],[3,[0,1,0]],[4,[-1,0,0]],[5,[1,0,0]]];
+  for(const m of state.mobilier){
+    const col=PALETTE[state.mobilier.indexOf(m)%PALETTE.length];
+    const x0=m.x,x1=m.x+m.L,y0=m.y,y1=m.y+m.l,z0=m.z,z1=m.z+m.H;
+    const V={a:[x0,y0,z0],b:[x1,y0,z0],c:[x1,y1,z0],d:[x0,y1,z0],e:[x0,y0,z1],f:[x1,y0,z1],g:[x1,y1,z1],h:[x0,y1,z1]};
+    const F=[[V.a,V.b,V.c,V.d,BOXF[0]],[V.e,V.f,V.g,V.h,BOXF[1]],[V.a,V.b,V.f,V.e,BOXF[2]],[V.d,V.c,V.g,V.h,BOXF[3]],[V.a,V.d,V.h,V.e,BOXF[4]],[V.b,V.c,V.g,V.f,BOXF[5]]];
+    for(const quad of F){
+      const n=quad[4][1];
+      const fcx=(quad[0][0]+quad[1][0]+quad[2][0]+quad[3][0])/4,fcy=(quad[0][1]+quad[1][1]+quad[2][1]+quad[3][1])/4,fcz=(quad[0][2]+quad[1][2]+quad[2][2]+quad[3][2])/4;
+      const depth=-((fcx-cx)*camDir[0]+(fcy-cy)*camDir[1]+(fcz-cz)*camDir[2]);
+      if((n[0]*camDir[0]+n[1]*camDir[1]+n[2]*camDir[2])<0.04)continue;
+      const sh=0.55+0.45*Math.max(0,n[0]*LIGHT[0]+n[1]*LIGHT[1]+n[2]*LIGHT[2]);
+      faces.push({pts:quad.slice(0,4).map(p=>P(p[0],p[1],p[2])),col:shadeHex(col,sh),depth:depth,edge:col});
+    }
+  }
+  faces.sort((a,b)=>b.depth-a.depth);
+  for(const f of faces){
+    ctx.beginPath();ctx.moveTo(f.pts[0][0],f.pts[0][1]);
+    for(let q=1;q<4;q++)ctx.lineTo(f.pts[q][0],f.pts[q][1]);
+    ctx.closePath();ctx.fillStyle=f.col;ctx.fill();
+    ctx.strokeStyle=f.edge;ctx.lineWidth=0.7;ctx.globalAlpha=0.55;ctx.stroke();ctx.globalAlpha=1;
+  }
+  /* 4) cônes de soufflage translucides (volume du jet) */
+  for(const b of state.supplies){
+    const p=posOf(b,r),d=dirOf(b,r);
+    const L2=Math.max(0.5,b.portee||2.0),rad=(b.dim||0.25)/2+0.15*L2;
+    let pp=[d[1],-d[0],0];
+    if(Math.hypot(pp[0],pp[1])<1e-3)pp=[1,0,0];
+    const pl=Math.hypot(pp[0],pp[1],pp[2])||1;
+    pp=[pp[0]/pl,pp[1]/pl,pp[2]/pl];
+    const A=P(p[0],p[1],p[2]),B1=P(p[0]+d[0]*L2+pp[0]*rad,p[1]+d[1]*L2+pp[1]*rad,p[2]+d[2]*L2+pp[2]*rad),B2=P(p[0]+d[0]*L2-pp[0]*rad,p[1]+d[1]*L2-pp[1]*rad,p[2]+d[2]*L2-pp[2]*rad);
+    ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B1[0],B1[1]);ctx.lineTo(B2[0],B2[1]);ctx.closePath();
+    ctx.fillStyle='rgba(56,189,248,0.10)';ctx.fill();
+    ctx.strokeStyle='rgba(56,189,248,0.35)';ctx.lineWidth=1;ctx.stroke();
+  }
+  /* 5) lignes de courant + particules animées */
   if(sim&&sim.streams){
     for(const pts of sim.streams){
-      ctx.strokeStyle='rgba(56,189,248,0.75)';ctx.lineWidth=1.4;ctx.beginPath();
+      ctx.strokeStyle='rgba(56,189,248,0.28)';ctx.lineWidth=1.1;ctx.beginPath();
       let started=false;
       for(const p of pts){const Q=P(p[0],p[1],p[2]);if(!started){ctx.moveTo(Q[0],Q[1]);started=true;}else ctx.lineTo(Q[0],Q[1]);}
       ctx.stroke();
     }
+    if(opts.anim)drawParticles(ctx,P);
   }
+  /* 6) bouches / reprises */
   for(const b of state.supplies){
     const p=posOf(b,r),Q=P(p[0],p[1],p[2]);
     ctx.fillStyle='#38bdf8';
     if(b.type==='fente'){
-      const ax=slotAxes(b),L2=b.dim/2;
-      const A=P(p[0]+ax.long[0]*L2,p[1]+ax.long[1]*L2,p[2]+ax.long[2]*L2);
-      const B=P(p[0]-ax.long[0]*L2,p[1]-ax.long[1]*L2,p[2]-ax.long[2]*L2);
+      const ax=slotAxes(b),L3=b.dim/2;
+      const A=P(p[0]+ax.long[0]*L3,p[1]+ax.long[1]*L3,p[2]+ax.long[2]*L3);
+      const B=P(p[0]-ax.long[0]*L3,p[1]-ax.long[1]*L3,p[2]-ax.long[2]*L3);
       ctx.strokeStyle='#38bdf8';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
       ctx.beginPath();ctx.arc(Q[0],Q[1],3,0,7);ctx.fill();
     }else{ctx.beginPath();ctx.arc(Q[0],Q[1],5,0,7);ctx.fill();}
   }
-  for(const e of state.extracts){
-    const p=posOf(e,r),Q=P(p[0],p[1],p[2]);
+  for(const e2 of state.extracts){
+    const p=posOf(e2,r),Q=P(p[0],p[1],p[2]);
     ctx.fillStyle='#f87171';
-    if(e.type==='fente'){
-      const ax=slotAxes(e),L2=e.dim/2;
-      const A=P(p[0]+ax.long[0]*L2,p[1]+ax.long[1]*L2,p[2]+ax.long[2]*L2);
-      const B=P(p[0]-ax.long[0]*L2,p[1]-ax.long[1]*L2,p[2]-ax.long[2]*L2);
+    if(e2.type==='fente'){
+      const ax=slotAxes(e2),L3=e2.dim/2;
+      const A=P(p[0]+ax.long[0]*L3,p[1]+ax.long[1]*L3,p[2]+ax.long[2]*L3);
+      const B=P(p[0]-ax.long[0]*L3,p[1]-ax.long[1]*L3,p[2]-ax.long[2]*L3);
       ctx.strokeStyle='#f87171';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
       ctx.fillRect(Q[0]-3,Q[1]-3,6,6);
     }else{ctx.fillRect(Q[0]-5,Q[1]-5,10,10);}
+  }
+  /* 7) contours du plan, nets */
+  ctx.strokeStyle='#5b6b80';ctx.lineWidth=1.6;ctx.beginPath();
+  poly.forEach((p,i)=>{const Q=P(p[0],p[1],0);if(i===0)ctx.moveTo(Q[0],Q[1]);else ctx.lineTo(Q[0],Q[1]);});
+  ctx.closePath();ctx.stroke();
+}
+/* --- Particules animées : avancent le long des lignes de courant à la vitesse locale --- */
+function streamLens(){
+  if(_lenCache&&_lenKey===sim)return _lenCache;
+  _lenCache=sim.streams.map(pts=>{
+    const cum=[0];
+    for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1],pts[i][2]-pts[i-1][2]));
+    return cum;
+  });
+  _lenKey=sim;_parts=null;
+  return _lenCache;
+}
+function pointAtArc(pts,cum,arc){
+  let lo=0,hi=cum.length-1;
+  if(arc<=0)return pts[0];
+  if(arc>=cum[hi])return pts[hi];
+  while(hi-lo>1){const mid=(lo+hi)>>1;if(cum[mid]<=arc)lo=mid;else hi=mid;}
+  const t=(arc-cum[lo])/Math.max(1e-9,cum[hi]-cum[lo]);
+  return [pts[lo][0]+(pts[hi][0]-pts[lo][0])*t,pts[lo][1]+(pts[hi][1]-pts[lo][1])*t,pts[lo][2]+(pts[hi][2]-pts[lo][2])*t];
+}
+function drawParticles(ctx,P){
+  const lens=streamLens();
+  if(!_parts||_parts.length!==sim.streams.length){
+    _parts=sim.streams.map((pts,si)=>{
+      const cum=lens[si],L=cum[cum.length-1]||1;
+      const nP=clamp(Math.round(L/0.7),3,16);
+      return Array.from({length:nP},(_,i)=>((i+0.5)/nP)*L);
+    });
+  }
+  const dt=clamp((performance.now()-_lastT)/1000,0.001,0.05)||0.016;
+  for(let si=0;si<sim.streams.length;si++){
+    const pts=sim.streams[si],cum=lens[si],L=cum[cum.length-1]||1;
+    for(let pi=0;pi<_parts[si].length;pi++){
+      let arc=_parts[si][pi];
+      const p0=pointAtArc(pts,cum,arc);
+      const v=velAt(p0),sp=Math.hypot(v[0],v[1],v[2]);
+      arc=(arc+sp*dt*2.6+0.004)%L;
+      _parts[si][pi]=arc;
+      const p=pointAtArc(pts,cum,arc);
+      const Q=P(p[0],p[1],p[2]);
+      ctx.beginPath();ctx.arc(Q[0],Q[1],2,0,7);
+      ctx.fillStyle=sp>0.05?colorScale('vit',Math.min(sp,fieldScale('vit').hi)):'rgba(148,163,184,0.6)';
+      ctx.fill();
+    }
   }
 }
 function render3D(){
@@ -2043,7 +2194,8 @@ function render3D(){
   cv.style.width=w+'px';cv.style.height=h+'px';
   const ctx=cv.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  draw3DScene(ctx,w,h,cam);
+  draw3DScene(ctx,w,h,cam,{anim:true});
+  ensure3DLoop();
 }
 /* Vue isométrique (vraie projection iso : yaw=45°, pitch=atan(1/√2)) pour le rapport */
 function render3DIso(canvas){
@@ -2051,14 +2203,42 @@ function render3DIso(canvas){
   const ctx=canvas.getContext('2d');
   const r=state.room,bb=bboxOf(polyOf(r));
   const isoCam={yaw:Math.PI/4,pitch:Math.atan(1/Math.SQRT2),dist:Math.max(bb.x1-bb.x0,bb.y1-bb.y0,r.H)*1.9};
-  draw3DScene(ctx,W,H,isoCam);
+  draw3DScene(ctx,W,H,isoCam,{anim:false});
   return canvas;
 }
+/* --- Boucle d'animation : particules + mode démo (rotation auto + balayage de tranche) --- */
+function ensure3DLoop(){
+  if(_animOn)return;
+  if(!demo&&!(sim&&sim.streams&&sim.streams.length))return;
+  if($('#pane3d').style.display==='none')return;
+  _animOn=true;_lastT=performance.now();
+  requestAnimationFrame(step3D);
+}
+function step3D(t){
+  const dt=clamp((t-_lastT)/1000,0.001,0.05);_lastT=t;
+  if(demo){
+    cam.yaw+=0.004;
+    _demoT+=dt*0.5;
+    const H=state.room.H;
+    changerTranche(Math.round((0.15+(H-0.3)*(0.5-0.5*Math.cos(_demoT)))*20)/20);
+  }
+  render3D();
+  const active=demo||!!(sim&&sim.streams&&sim.streams.length&&$('#pane3d').style.display!=='none');
+  if(active)requestAnimationFrame(step3D);else _animOn=false;
+}
+function toggleDemo(){
+  demo=!demo;
+  const b=$('#btnDemo');
+  if(b){b.classList.toggle('on',demo);b.textContent=demo?'■ Quitter le mode démo':'▶ Mode démo';}
+  if(!demo){renderAffParams();}
+  ensure3DLoop();
+}
+/* ================= Interactions souris ================= */
 /* ================= Interactions souris ================= */
 function attach3D(){
   const cv=$('#view3d');
   let drag=false,lx=0,ly=0;
-  cv.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY;});
+  cv.addEventListener('mousedown',e=>{if(demo)toggleDemo();drag=true;lx=e.clientX;ly=e.clientY;});
   window.addEventListener('mouseup',()=>{drag=false;});
   cv.addEventListener('mousemove',e=>{
     if(!drag)return;
@@ -2121,14 +2301,17 @@ function attach2D(){
     else if(drag.kind==='m'){drag.ref.x=clamp(p[0]-drag.dx,bb.x0,Math.max(bb.x0,bb.x1-drag.ref.L));drag.ref.y=clamp(p[1]-drag.dy,bb.y0,Math.max(bb.y0,bb.y1-drag.ref.l));}
     else if(drag.kind==='w'){const w=drag.ref;const len=drag.edge.len;w.pos=clamp((p[0]-drag.edge.A[0])*drag.edge.dx+(p[1]-drag.edge.A[1])*drag.edge.dy-(w.larg||0)/2,0,Math.max(0,len-(w.larg||0)));}
     else{const q=clampToRoom(p[0],p[1]);drag.ref.x=q[0];drag.ref.y=q[1];}
+    if(drag.kind==='s'||drag.kind==='e'||drag.kind==='m'||drag.kind==='w')demandeApercu();
     drawHeatmap();render3D();
   });
   window.addEventListener('mouseup',()=>{
     if(!drag)return;
     const wasPlan=(drag.kind==='v'||drag.kind==='i');
+    const wasObj=!wasPlan;
     drag=null;
     if(wasPlan){afterPolyEdit();}
     renderSupplies();renderExtracts();renderMobilier();renderWindows();saveLocal();drawHeatmap();render3D();
+    if(wasObj&&!solving){const el=$('#chkApercu');if(el&&el.checked)resoudre();}
   });
   // Tooltip au survol : valeur exacte de la cellule sous le curseur
   const tip=document.createElement('div');
@@ -2167,6 +2350,7 @@ function marquerPerime(){
 let rapportHTML='';
 function genererRapport(){
   if(!sim||!sim.res)return;
+  if(sim.preview){alert('Un aperçu rapide (approximatif) est affiché — lancez « Résoudre le champ permanent » avant de générer le rapport.');return;}
   const r=state.room,s=state.sim,R=sim.res;
   const poly=polyOf(r),bb=bboxOf(poly),area=polyArea(poly);
   // heat maps : une tranche tous les 0,5 m + la tranche courante si elle n'y est pas

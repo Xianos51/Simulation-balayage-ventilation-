@@ -235,6 +235,25 @@ les métriques de référence restent celles de la phase 2 (voir validation ci-d
 | Sillage (unitaire + intégré) | déficit aval 1,00 → 0,44 ; amont inchangé ; masse conservée | OK |
 | Parois h + rayonnement | T occ tirée vers Tamb comme attendu | OK |
 
+### P3.7 — Mode présentation client (2026-11-26, même livraison)
+- **Vue 3D « présentation »** (canvas 2D, toujours zéro dépendance) : faces remplies avec
+  tri de profondeur et éclairage simple, **sol coloré tuile par tuile par le champ**
+  (couche basse), parois intérieures visibles translucides, cônes de jets translucides
+  calibrés sur la portée, lignes de courant + **particules animées** qui avancent à la
+  vitesse locale (couleur = vitesse). S'applique aussi à la vue isométrique du rapport.
+- **⚡ Aperçu instantané** (case à cocher, défaut actif) : pendant le déplacement d'une
+  bouche/reprise/meuble à la souris, une prévision rapide (< 1 s : champ potentiel + jets +
+  flottabilité + transport court, thread principal) met la heat map et la 3D à jour en
+  direct ; bandeau « ⚡ Aperçu » dans les stats ; rapport et CSV refusés sur un aperçu ;
+  au relâchement, la résolution complète (worker) se lance automatiquement. Désactivé
+  automatiquement sur les grilles > 45 000 cellules (trop lentes).
+- **▶ Mode démo** (onglets de vue) : rotation lente de la caméra + balayage automatique de
+  la tranche z (allers-retours), pour laisser tourner sur un écran ; un clic dans la vue
+  3D l'arrête.
+- Tests headless (jsdom, 17 vérifications) : scène remplie (1 555 couleurs au sol),
+  meubles en volume, particules qui avancent, démo rotation/tranche, aperçu pendant le
+  drag + refus rapport + résolution complète au relâchement, iso du rapport remplie.
+
 ### Phase 3 — restant reporté (décision du 2026-11-26)
 - **NS complète (projection de Chorin + k-ε/LES) en WebGPU/WASM** : reporté. Raisons :
   le gain attendu porte sur des détails fins (sillages, recirculations) que le modèle
@@ -264,6 +283,7 @@ les métriques de référence restent celles de la phase 2 (voir validation ci-d
 | 2026-11-22 | **P2.7 livrée en local** : fenêtres sur les parois + température extérieure (Robin U·Text, infiltration = air neuf à Text rééquilibrée sur les reprises, τN = V/(Q+Qinf), déperditions depWin/depInf) + v0/portée fabricant par bouche (calibrage du noyau du jet à vTerm) | demande utilisateur « avant la prochaine phase » : thermique réaliste avec l’extérieur et jets fidèles aux données fabricant ; non-régression res 0,25 validée (voir P2.7), écart ERE expliqué par la correction T=Tsouf aux soufflages |
 | 2026-11-22 | **Bug fix** : le sélecteur « Grandeur affichée » (section 7) ne changeait jamais la heat map — `updSim` ne retenait que les valeurs numériques (`parseFloat('vit')` = NaN → affectation sautée, grandeur restait « balayage ») | remontée utilisateur : la heat map affichait toujours le balayage en vitesse/température ; corrigé (affectation directe pour `grandeur`), vérifié headless : grandeur = vit/temp/age OK et `grandeurVal` retourne bien la bonne grandeur |
 | 2026-11-26 | **Phase 3 (partie applicable) livrée** : couplage flottabilité multi-passes réglable, sillage d'obstacles opt-in, apports internes du mobilier, h parois + rayonnement linéarisé, perméabilité Q4Pa (NF EN 12207) avec ΔP supposé, échelle de couleur adaptative (P95) — toutes les nouveautés neutres par défaut (non-régression validée) | demande utilisateur « implémente les futures phases » ; le solveur NS WebGPU complet est reporté avec justification (voir phase 3) |
+| 2026-11-26 | **P3.7 mode présentation** : vue 3D en volume (faces remplies, sol heat map, cônes de jets), particules animées le long des lignes de courant, ⚡ aperçu instantané pendant le déplacement des bouches (résolution complète au relâchement), ▶ mode démo (rotation auto + balayage de tranche) | demande utilisateur : « visualisation attrayante en quasi temps réel pour montrer aux clients » — canvas 2D pur pour rester fichier unique universel (WebGL brut gardé en réserve) |
 | 2026-11-26 | **Bug fix physique** : le signe de la flottabilité de Boussinesq était inversé (l'air chaud descendait, l'air froid montait) ; corrigé + nouvelle référence du cas 1 (ERE 181 → 216 %, âge moyen 11,6 → 9,6 min, τN inchangé) | trouvée en implémentant la phase 3 : la stratification chauffage/refroidissement était dans le mauvais sens ; headless : chaud en haut en chauffage, froid en bas en refroidissement |
 | 2026-11-22 | **Bug fix affichage température** : l'échelle de couleurs « temp » allait de Text à max(Tsouf,Tamb)+1 → avec Text = 5 °C, toute la plage utile (17–22 °C) était écrasée en bleu uniforme. Corrigé : échelle = min/max réellement résolus du champ (`tempScale()`, cachée par run). Ajouts UX : **tooltip au survol** de la heat map (valeur exacte par cellule x,y,z) et **bandeau ⚠ « configuration modifiée depuis la dernière résolution »** quand on édite la config après un run (18 saisies + updSim marquées) | remontée utilisateur : heat map température « uniformément 17 °C » alors que soufflage à 22 °C ; cause = échelle élargie par Text + run non relancé après changement de Tsouf ; vérifié headless : échelle 18,8–22,2, 24 couleurs distinctes sur un dégradé 19→22 °C, ⚠ déclenché par updRoom mais pas par grandeur/tranche |
 

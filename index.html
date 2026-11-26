@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Simulateur de balayage de ventilation</title>
+<title>Simulateur de balayage de ventilation — champ permanent</title>
 <style>
 :root{
   --bg:#0f1620; --panel:#182230; --panel2:#1f2b3d; --bord:#2c3a4f;
@@ -20,7 +20,7 @@ section#visu{display:flex;flex-direction:column;gap:8px;min-width:0}
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--acc);margin:14px 0 6px;border-bottom:1px solid var(--bord);padding-bottom:4px}
 h2:first-child{margin-top:0}
 label.f{display:flex;align-items:center;gap:6px;margin:4px 0;color:var(--mut);font-size:12.5px}
-label.f span{width:118px;flex:none}
+label.f span{width:150px;flex:none}
 input,select{background:var(--panel2);border:1px solid var(--bord);color:var(--txt);border-radius:6px;padding:4px 6px;font-size:12.5px;width:100%}
 input:focus,select:focus{outline:1px solid var(--acc)}
 .row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;background:var(--panel2);border:1px solid var(--bord);border-radius:8px;padding:6px;margin:6px 0}
@@ -45,7 +45,14 @@ button.mini{padding:2px 7px;font-size:11px}
 #vues{flex:1;display:flex;gap:10px;min-height:0}
 #vues .pane{flex:1;background:var(--panel);border:1px solid var(--bord);border-radius:10px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
 #vues canvas{max-width:100%;max-height:100%}
+#pane2d canvas{position:absolute;inset:0;margin:auto}
+#heatGL{z-index:0}
+#heatmap{z-index:1;background:transparent}
 #view3d,#heatmap{touch-action:none}
+.pbar{display:flex;gap:4px;align-items:center;flex-wrap:wrap;background:var(--panel2);border:1px solid var(--bord);border-radius:8px;padding:6px;margin:6px 0}
+.pbar select{width:auto;flex:1;min-width:110px}
+.pbar input{width:110px}
+.hint{font-size:10.5px;color:var(--mut)}
 .pane h3{position:absolute;top:8px;left:10px;margin:0;font-size:12px;color:var(--mut);font-weight:600;z-index:2}
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:flex;flex-direction:column}
 #overlay[hidden]{display:none}
@@ -54,41 +61,79 @@ button.mini{padding:2px 7px;font-size:11px}
 .note{font-size:11px;color:var(--mut);line-height:1.5}
 .warn{color:var(--warn);font-size:11.5px}
 input[type=range]{padding:0}
+#progressBar{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden;margin-top:6px}
+#progressBar>div{height:100%;width:0;background:var(--acc);transition:width .15s}
 @media (max-width:1000px){main{grid-template-columns:1fr;height:auto}section#visu{height:80vh}}
 </style>
 </head>
 <body>
 <header>
-  <h1>🌬️ Simulateur de balayage de ventilation</h1>
-  <p>Fichier unique autonome — renseignez la pièce, les bouches, le mobilier, lancez la simulation, visualisez le flux en 3D et éditez un rapport avec heat map du taux de balayage.</p>
+  <h1>Simulateur de balayage de ventilation</h1>
+  <p>Fichier unique autonome — pièce, bouches, reprises, mobilier → résolution du champ d'air en régime permanent (grille 3D) → heat map de balayage / âge / température / vitesse, vue 3D des lignes de courant, rapport.</p>
 </header>
 <main>
   <aside id="panneau">
+    <h2>0. Étude — multi-pièces</h2>
+    <div class="pbar" id="piecesBar"></div>
+    <p class="note">Une étude = plusieurs pièces indépendantes (chacune avec son plan, ses bouches, son résultat). « Résoudre toutes les pièces » enchaîne les calculs ; le rapport récapitule toutes les pièces résolues.</p>
     <h2>1. Pièce &amp; conditions</h2>
     <div id="piece"></div>
-    <h2>2. Bouches de soufflage (insufflation)</h2>
+    <h2>2. Fenêtres sur les parois</h2>
+    <div id="fenetres"></div>
+    <div class="btnline"><button class="mini" onclick="addWindow()">+ Ajouter une fenêtre</button></div>
+    <p class="note">Fenêtre = rectangle sur un mur vertical (x=0, x=L, y=0, y=l) : « pos » = position le long du mur (m), « allège z » = hauteur du bas de la fenêtre, puis largeur × hauteur (m). Chaque fenêtre échange thermiquement avec l'extérieur à la <b>température extérieure</b> renseignée en section 1 (U en W/m²K) et peut laisser passer une <b>infiltration d'air</b> (m³/h, traitée comme de l'air neuf à T extérieure, rééquilibrée sur les reprises). Déplaçables à la souris sur la vue de dessus (traits ambrés « F1… »).</p>
+    <h2>3. Bouches de soufflage (insufflation)</h2>
     <div id="soufflage"></div>
     <div class="btnline"><button class="mini" onclick="addSupply()">+ Ajouter une bouche de soufflage</button></div>
-    <p class="note">Plafond : X, Y = position (Z ignoré), direction réglable. Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur, soufflage horizontal vers l'intérieur de la pièce. « Rotation (°) » oriente la bouche autour de son axe de soufflage (essentiel pour les fentes : au plafond = rotation dans le plan horizontal, au mur = rotation autour du jet horizontal). Astuce : déplacez aussi les bouches, reprises et mobilier directement à la souris sur la vue de dessus.</p>
-    <h2>3. Reprises d'air (extraction)</h2>
+    <p class="note">Plafond : X, Y = position (Z ignoré), direction réglable. Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur, soufflage horizontal vers l'intérieur. « Rotation (°) » oriente la bouche autour de son axe (essentiel pour les fentes). <b>v0 fab.</b> (m/s) et <b>portée fab.</b> (m, throw à vTerm) sont les données fabricant : si renseignées, le jet analytique est calibré dessus ; sinon v0 est calculée depuis Q et la section, et la portée découle de la loi standard. Déplacez aussi bouches, reprises, fenêtres et mobilier à la souris sur la vue de dessus.</p>
+    <h2>4. Reprises d'air (extraction)</h2>
     <div id="extraction"></div>
     <div class="btnline"><button class="mini" onclick="addExtract()">+ Ajouter une reprise d'air</button></div>
-    <h2>4. Mobilier &amp; obstacles</h2>
+    <h2>5. Mobilier &amp; obstacles</h2>
     <div id="mobilier"></div>
     <div class="btnline"><button class="mini" onclick="addMeuble()">+ Ajouter un élément</button></div>
-    <h2>5. Simulation</h2>
+    <h2>6. Résolution du champ (régime permanent)</h2>
     <div id="simparams"></div>
+    <div id="progressBar"><div></div></div>
     <div class="btnline">
-      <button class="primary" id="btnLancer" onclick="lancer()">▶ Lancer la simulation</button>
-      <button id="btnPause" onclick="pauseReprendre()" disabled>⏸ Pause</button>
-      <button onclick="reinitSim()">↺ Réinitialiser</button>
+      <button class="primary" id="btnLancer" onclick="resoudre()">Résoudre le champ permanent</button>
+      <button class="green" id="btnTout" onclick="resoudreTout()">Résoudre toutes les pièces</button>
+      <button id="btnPause" onclick="pauseReprendre()" disabled>Pause</button>
+      <button onclick="reinit()">Réinitialiser</button>
     </div>
+    <p class="note" id="progress">Le champ de vitesse, l'âge de l'air et la température sont résolus directement en régime permanent sur une grille 3D (pas de simulation transitoire tronquée).</p>
+    <h2>7. Affichage</h2>
+    <div id="affparams"></div>
+    <h2>8. Scénario (fichier)</h2>
     <div class="btnline">
-      <button class="green" id="btnRapport" onclick="genererRapport()" disabled>📄 Générer le rapport</button>
-      <button id="btnPng" onclick="telechargerHeatmap()" disabled>🖼 Heat map (PNG)</button>
+      <button onclick="exporterJSON()">Exporter le scénario (JSON)</button>
+      <button onclick="document.getElementById('fileImport').click()">Importer un scénario…</button>
+      <input type="file" id="fileImport" accept=".json,application/json" style="display:none" onchange="importerJSON(event)">
+      <button onclick="copierURL()">Copier l'URL de partage</button>
+      <button onclick="resetConfig()">Config par défaut</button>
+    </div>
+    <h2>8bis. Scénarios enregistrés</h2>
+    <div class="btnline">
+      <input type="text" id="nomScenario" placeholder="Nom du scénario…" style="width:140px">
+      <button class="mini" onclick="sauverScenario()">Enregistrer</button>
+    </div>
+    <div id="listeScenarios" style="margin-top:4px"></div>
+    <h2>8ter. Historique des runs</h2>
+    <div id="listeHistorique" style="margin-top:4px"></div>
+    <h2>8quat. Comparer deux runs</h2>
+    <div class="btnline">
+      <select id="cmpA" style="width:130px" onchange="renderComparaison()"></select>
+      <select id="cmpB" style="width:130px" onchange="renderComparaison()"></select>
+    </div>
+    <div id="tableComparaison" style="margin-top:6px"></div>
+    <h2>9. Résultats</h2>
+    <div class="btnline">
+      <button class="green" id="btnRapport" onclick="genererRapport()" disabled>Rapport (imprimer / PDF / HTML)</button>
+      <button id="btnPng" onclick="telechargerHeatmap()" disabled>Heat map (PNG)</button>
+      <button id="btnCsv" onclick="exporterCSV()" disabled>Champs 3D (CSV)</button>
     </div>
     <h2>Méthodologie</h2>
-    <p class="note">Modèle lagrangien simplifié : particules d'air émises à t = 0 aux bouches d'insufflation (pas de temps adaptatif 0,05–0,12 s) et suivies jusqu'à l'extraction. Jets avec entraînement (décroissance de la vitesse selon la distance), diffusion turbulente, flottabilité si écart de température soufflage/ambiance, rebonds sur parois et obstacles, et aspiration aux extractions selon un écoulement de puits (v ∝ q/d² vers chaque reprise, proportionnel à son débit : prédominant près de la bouche, quasi nul aux coins — le trajet court soufflage→reprise est privilégié). L'âge de l'air est cumulé dans une grille volumique (~0,25 m) sur toute la trajectoire : l'âge moyen par cellule estime l'état permanent, et le <b>taux de balayage local</b> vaut τ<sub>nominal</sub> / âge moyen local × 100 %, avec τ<sub>nominal</sub> = Volume / Débit total. Utilisez la durée automatique (≈ 4 × τ<sub>nominal</sub>, max 1 h). Outil d'aide au dimensionnement — ne remplace pas une étude CFD réglementaire.</p>
+    <p class="note">Modèle eulérien en régime permanent sur grille 3D : champ de vitesse = écoulement potentiel (sources aux soufflages, puits aux reprises, parois sans pénétration) + jets analytiques (loi en 1/x pour les jets ronds, 1/√x pour les fentes, expansion conique du profil), puis <b>projection de Helmholtz</b> qui garantit exactement ∇·v = sources/puits et v·n = 0 aux parois et obstacles (conservation de la masse). L'<b>âge de l'air</b> et la <b>température</b> sont résolus en permanent (advection upwind + diffusion turbulente ν<sub>t</sub>), avec couplage flottabilité de Boussinesq faible (l'air chaud monte, l'air froid descend). Le <b>taux de balayage local</b> = τ<sub>nominal</sub> / âge local × 100 % (τ<sub>nominal</sub> = V/Q). La vue 3D montre les lignes de courant advectées par le champ résolu. <b>Fenêtres</b> : les faces de mur concernées échangent avec la <b>température extérieure</b> (U en W/m²K) et l'infiltration éventuelle est de l'air neuf à T extérieure ; les jets sont calibrés sur <b>v0 / portée fabricant</b> si renseignées. Outil d'aide au dimensionnement — ne remplace pas une étude CFD réglementaire (RE2020, NF EN 16798-1, ASHRAE 62.1).</p>
   </aside>
   <section id="visu">
     <div id="stats"></div>
@@ -96,41 +141,54 @@ input[type=range]{padding:0}
       <button data-v="both" class="on" onclick="setView('both')">3D + Heat map</button>
       <button data-v="3d" onclick="setView('3d')">Vue 3D</button>
       <button data-v="2d" onclick="setView('2d')">Heat map 2D</button>
-      <label class="f" style="margin:0"><span style="width:auto">Tranche heat map z = <b id="lblTranche">1,1</b> m</span>
-      <input type="range" id="tranche" min="0.2" max="2.4" step="0.1" value="1.1" style="width:160px" oninput="changerTranche(this.value)"></label>
     </div>
-    <div id="progress" class="note"></div>
     <div id="vues">
-      <div class="pane" id="pane3d"><h3>Vue 3D du flux d'air (glisser horizontalement = tourner autour de la pièce, molette = zoom ; X à droite, Z en haut comme en vue 2D)</h3><canvas id="view3d"></canvas></div>
-      <div class="pane" id="pane2d"><h3>Heat map du taux de balayage (%) — vue de dessus : glisser-déposer les bouches, reprises et mobilier à la souris</h3><canvas id="heatmap" width="960" height="700"></canvas></div>
+      <div class="pane" id="pane3d"><h3>Vue 3D — lignes de courant (glisser = tourner, molette = zoom)</h3><canvas id="view3d"></canvas></div>
+      <div class="pane" id="pane2d"><h3 id="titre2d">Heat map — vue de dessus (glisser-déposer bouches, reprises, mobilier)</h3><canvas id="heatGL" width="960" height="700"></canvas><canvas id="heatmap" width="960" height="700"></canvas></div>
     </div>
   </section>
 </main>
 <div id="overlay" hidden>
   <div class="bar">
     <b>Rapport de simulation</b>
-    <button class="primary" onclick="imprimerRapport()">🖨 Imprimer / PDF</button>
-    <button class="green" onclick="telechargerRapport()">💾 Télécharger le rapport (HTML)</button>
-    <button onclick="fermerRapport()">✕ Fermer</button>
+    <button class="primary" onclick="imprimerRapport()">Imprimer / PDF</button>
+    <button class="green" onclick="telechargerRapport()">Télécharger le rapport (HTML)</button>
+    <button onclick="fermerRapport()">Fermer</button>
   </div>
   <iframe id="repFrame" title="Rapport"></iframe>
 </div>
 <script>
+"use strict";
+/* ================= RNG seedé (reproductible) ================= */
+function mulberry32(seed){let a=seed>>>0;return function(){a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
+let RNG=mulberry32(42);
+function rnd(a,b){return a+RNG()*(b-a);}
+function gauss(){let u=0,v=0,s=0;do{u=RNG()*2-1;v=RNG()*2-1;s=u*u+v*v;}while(s>=1||s===0);return u*Math.sqrt(-2*Math.log(s)/s);}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function fmt(x,d){if(x==null||isNaN(x))return'—';d=d==null?1:d;return x.toFixed(d).replace('.',',');}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+/* ================= État ================= */
 let uid=1;
-const state={
-  room:{L:6,l:4,H:2.6,Tamb:20,Tsouf:16},
+const DEFAULT_STATE={
+  room:{L:6,l:4,H:2.6,Tamb:20,Tsouf:16,Text:5},
+  windows:[
+    {id:uid++,mur:'murY0',pos:1.4,z:0.9,larg:1.2,haut:1.4,u:2.0,q:0}
+  ],
   supplies:[
-    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:2,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0},
-    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:4,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0}
+    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:2,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0,v0:null,portee:null},
+    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:4,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0,v0:null,portee:null}
   ],
   extracts:[{id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:0.3,z:2.6,q:0}],
   mobilier:[
     {id:uid++,preset:'Table',nom:'Table 1',x:2,y:1.2,z:0,L:1.6,l:0.8,H:0.75},
-    {id:uid++,preset:'Table',nom:'Table 2',x:4,y:1.2,z:0,L:1.6,l:0.8,H:0.75}
+    {id:uid++,preset:'Table 2',x:4,y:1.2,z:0,L:1.6,l:0.8,H:0.75}
   ],
-  sim:{duree:300,autoDuree:true,nb:2500,vitesse:100,tranche:1.1}
+  sim:{res:0.25,nu0:0.005,cnu:0.09,zocc:1.8,seed:42,nstream:24,grandeur:'balayage',tranche:1.1,maxIt:40000,vTerm:0.25}
 };
+let state=JSON.parse(JSON.stringify(DEFAULT_STATE));
 let sim=null;
+
 const $=s=>document.querySelector(s);
 const PRESETS={
   'Table':{L:1.6,l:0.8,H:0.75},'Bureau':{L:1.4,l:0.7,H:0.75},'Chaise':{L:0.45,l:0.45,H:0.9},
@@ -141,20 +199,151 @@ const PALETTE=['#8b5cf6','#f59e0b','#ec4899','#10b981','#f97316','#06b6d4','#a3e
 const TYPE_LABEL={rond:'Ronde',carre:'Carrée',fente:'À fente',grille:'Grille'};
 const MONT_LABEL={plafond:'Plafond',murX0:'Mur x=0',murX1:'Mur x=L',murY0:'Mur y=0',murY1:'Mur y=l'};
 const DIR_LABEL={vert:'▼ verticale',a30:'↘ inclinée 30°',a45:'↘ inclinée 45°',a60:'↘ inclinée 60°'};
-function rnd(a,b){return a+Math.random()*(b-a);}
-let spareG=null;
-function gauss(){
-  if(spareG!=null){const v=spareG;spareG=null;return v;}
-  let u=0,v=0,s=0;
-  do{u=Math.random()*2-1;v=Math.random()*2-1;s=u*u+v*v;}while(s>=1||s===0);
-  const m=Math.sqrt(-2*Math.log(s)/s);
-  spareG=v*m;
-  return u*m;
+const GRAND_LABEL={balayage:'Taux de balayage (%)',age:'Âge de l’air (min)',temp:'Température (°C)',vit:'Vitesse (m/s)'};
+
+/* ================= Persistance : localStorage + URL hash ================= */
+function saveLocal(){try{localStorage.setItem('balayage-v2',JSON.stringify(state));}catch(e){}}
+function loadLocal(){try{const s=localStorage.getItem('balayage-v2');if(s){const o=JSON.parse(s);if(o&&o.room&&o.supplies)state=o;}}catch(e){}}
+function loadHash(){try{if(location.hash.length>1){const o=JSON.parse(decodeURIComponent(location.hash.slice(1)));if(o&&o.room&&o.supplies){state=o;return true;}}}catch(e){}return false;}
+function copierURL(){const u=location.origin+location.pathname+'#'+encodeURIComponent(JSON.stringify(state));navigator.clipboard.writeText(u).then(()=>{alert('URL copiée dans le presse-papiers :\n'+u);},()=>{prompt('URL de partage :',u);});}
+function exporterJSON(){const blob=new Blob([JSON.stringify(state,null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='scenario-balayage.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);}
+function importerJSON(ev){const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(o&&o.room&&o.supplies){state=o;uid=1+Math.max(0,...[...state.supplies,...state.extracts,...state.mobilier,...(state.windows||[])].map(b=>b.id||0));renderAll();saveLocal();refreshViews();alert('Scénario importé.');}}catch(e){alert('Fichier invalide : '+e.message);}};r.readAsText(f);ev.target.value='';}
+function resetConfig(){if(!confirm('Revenir à la configuration par défaut ?'))return;state=JSON.parse(JSON.stringify(DEFAULT_STATE));uid=1+Math.max(0,...[...state.supplies,...state.extracts,...state.mobilier,...(state.windows||[])].map(b=>b.id||0));renderAll();saveLocal();refreshViews();}
+
+/* ================= Scénarios nommés (localStorage) ================= */
+function loadScenarios(){try{const s=localStorage.getItem('balayage-scenarios-v2');return s?JSON.parse(s):[];}catch(e){return[];}}
+function saveScenariosList(list){try{localStorage.setItem('balayage-scenarios-v2',JSON.stringify(list));}catch(e){}}
+function sauverScenario(){
+  const nom=$('#nomScenario').value.trim()||('Scénario '+new Date().toLocaleString('fr-FR'));
+  const list=loadScenarios();
+  const entry={nom:nom,date:new Date().toISOString(),state:JSON.parse(JSON.stringify(state))};
+  const ex=list.findIndex(s=>s.nom===nom);
+  if(ex>=0){if(!confirm('Remplacer le scénario « '+nom+' » ?'))return;list[ex]=entry;}
+  else list.push(entry);
+  saveScenariosList(list);renderScenarios();
+  $('#nomScenario').value='';
 }
-function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
-function ru(){return (Math.random()*2-1)*1.732;}
-function fmt(x,d){if(x==null||isNaN(x))return'—';d=d==null?1:d;return x.toFixed(d).replace('.',',');}
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function chargerScenario(i){
+  const list=loadScenarios();if(!list[i])return;
+  if(!confirm('Charger le scénario « '+list[i].nom+' » ? La configuration actuelle sera remplacée.'))return;
+  state=JSON.parse(JSON.stringify(list[i].state));
+  uid=1+Math.max(0,...[...state.supplies,...state.extracts,...state.mobilier,...(state.windows||[])].map(b=>b.id||0));
+  sim=null;reinit();renderAll();saveLocal();refreshViews();
+}
+function supprimerScenario(i){
+  const list=loadScenarios();if(!list[i])return;
+  if(!confirm('Supprimer le scénario « '+list[i].nom+' » ?'))return;
+  list.splice(i,1);saveScenariosList(list);renderScenarios();
+}
+function renderScenarios(){
+  const list=loadScenarios();
+  $('#listeScenarios').innerHTML=list.length?list.map((s,i)=>{
+    const d=new Date(s.date);
+    return `<div class="row" style="padding:4px 6px;margin:3px 0;justify-content:space-between">
+      <span style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px" title="${esc(s.nom)}">${esc(s.nom)}</span>
+      <span style="font-size:10px;color:var(--mut)">${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
+      <span><button class="mini" onclick="chargerScenario(${i})">Charger</button> <button class="mini" onclick="supprimerScenario(${i})">✕</button></span>
+    </div>`;
+  }).join(''):'<p class="note">Aucun scénario enregistré.</p>';
+}
+
+/* ================= Historique des runs ================= */
+function loadHistory(){try{const s=localStorage.getItem('balayage-history-v2');return s?JSON.parse(s):[];}catch(e){return[];}}
+function saveHistoryList(list){try{localStorage.setItem('balayage-history-v2',JSON.stringify(list.slice(0,30)));}catch(e){}}
+function ajouterHistorique(){
+  if(!sim||!sim.res)return;
+  const h={
+    date:new Date().toISOString(),
+    nom:$('#nomScenario').value.trim()||null,
+    state:JSON.parse(JSON.stringify(state)),
+    res:JSON.parse(JSON.stringify(sim.res)),
+    conv:sim.conv?sim.conv.slice():[],
+    warn:sim.warn?sim.warn.slice():[]
+  };
+  const list=loadHistory();
+  list.unshift(h);
+  saveHistoryList(list);
+  renderHistorique();
+  renderComparaison();
+}
+function chargerHistorique(i){
+  const list=loadHistory();if(!list[i])return;
+  if(!confirm('Recharger le run du '+new Date(list[i].date).toLocaleString('fr-FR')+' ?'))return;
+  state=JSON.parse(JSON.stringify(list[i].state));
+  uid=1+Math.max(0,...[...state.supplies,...state.extracts,...state.mobilier,...(state.windows||[])].map(b=>b.id||0));
+  sim=null;reinit();renderAll();saveLocal();refreshViews();
+}
+function supprimerHistorique(i){const list=loadHistory();list.splice(i,1);saveHistoryList(list);renderHistorique();}
+function viderHistorique(){if(!confirm('Vider tout l’historique ?'))return;saveHistoryList([]);renderHistorique();}
+function renderHistorique(){
+  const list=loadHistory();
+  if(!list.length){$('#listeHistorique').innerHTML='<p class="note">Aucun run enregistré — résolvez un champ pour y revenir plus tard.</p>';return;}
+  $('#listeHistorique').innerHTML=list.map((h,i)=>{
+    const d=new Date(h.date),R=h.res;
+    return `<div class="row" style="padding:4px 6px;margin:3px 0;flex-wrap:wrap;gap:4px">
+      <span style="font-size:10.5px;color:var(--mut)">${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
+      <span class="tag" style="background:#0b2237;color:var(--acc2)">ERE ${fmt(R.ERE*100,0)}%</span>
+      <span class="tag" style="background:#0b2237;color:var(--acc)">âge ${fmt(R.ageMoy/60,1)}min</span>
+      <span class="tag" style="background:#0b2237;color:var(--warn)">${fmt(R.pctDead,0)}% mort</span>
+      <span style="margin-left:auto"><button class="mini" onclick="setCmp('A',${i})" title="Sélectionner comme run A">A</button> <button class="mini" onclick="setCmp('B',${i})" title="Sélectionner comme run B">B</button> <button class="mini" onclick="chargerHistorique(${i})">Charger</button> <button class="mini" onclick="supprimerHistorique(${i})">✕</button></span>
+    </div>`;
+  }).join('')+'<div class="btnline"><button class="mini" onclick="viderHistorique()">Vider l’historique</button></div>';
+}
+
+/* ================= Comparaison de deux runs ================= */
+function setCmp(which,i){const sel=$('#cmp'+which);sel.value=String(i);renderComparaison();}
+function optionsRuns(){
+  const list=loadHistory();
+  let opts='<option value="cur">'+(sim&&sim.res?'Run actuel':'Run actuel (non résolu)')+'</option>';
+  list.forEach((h,i)=>{
+    const d=new Date(h.date);
+    opts+='<option value="'+i+'">Run '+String(i+1).padStart(2,'0')+' — '+d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+' (ERE '+fmt(h.res.ERE*100,0)+'%)</option>';
+  });
+  return opts;
+}
+function getRunData(which){
+  if(which==='cur')return sim&&sim.res?{res:sim.res,label:'Run actuel',state:state}:null;
+  const list=loadHistory();const h=list[parseInt(which)];
+  if(!h)return null;
+  return {res:h.res,label:'Run '+(parseInt(which)+1),state:h.state};
+}
+function renderComparaison(){
+  const selA=$('#cmpA'),selB=$('#cmpB');
+  const opts=optionsRuns();
+  const vA=selA.value||'cur',vB=selB.value||'0';
+  selA.innerHTML=opts;selB.innerHTML=opts;
+  selA.value=vA;selB.value=(list=>list.includes(vB)?vB:'0')(loadHistory().map((_,i)=>String(i)));
+  const A=getRunData(selA.value),B=getRunData(selB.value);
+  const el=$('#tableComparaison');
+  if(!A||!B){el.innerHTML='<p class="note">Sélectionnez deux runs à comparer.</p>';return;}
+  const rows=[
+    ['τ nominal (min)',A.res.tauN/60,B.res.tauN/60,1],
+    ['ACH (vol/h)',A.res.ACH,B.res.ACH,1],
+    ['Âge moyen (min)',A.res.ageMoy/60,B.res.ageMoy/60,1],
+    ['ERE (%)',A.res.ERE*100,B.res.ERE*100,0],
+    ['Vol. balayage ≥ 100 % (%)',A.res.pctOk,B.res.pctOk,0],
+    ['Vol. zones mortes (%)',A.res.pctDead,B.res.pctDead,1],
+    ['Vitesse moy. zone occ. (m/s)',A.res.oz.v,B.res.oz.v,2],
+    ['Temp. moy. zone occ. (°C)',A.res.oz.T,B.res.oz.T,1],
+    ['Âge aux reprises (min)',A.res.bilanAge/60,B.res.bilanAge/60,1],
+    ['Déperditions fenêtres (W)',(A.res.depWin||0)+(A.res.depInf||0),(B.res.depWin||0)+(B.res.depInf||0),0],
+    ['Résidu div max',A.res.divRes,B.res.divRes,0,'exp']
+  ];
+  let html='<table style="width:100%;border-collapse:collapse;font-size:11.5px">';
+  html+='<tr><th style="text-align:left;padding:3px 6px;border-bottom:1px solid var(--bord);color:var(--mut)">Métrique</th><th style="padding:3px 6px;border-bottom:1px solid var(--bord);color:var(--acc)">'+esc(A.label)+'</th><th style="padding:3px 6px;border-bottom:1px solid var(--bord);color:var(--acc2)">'+esc(B.label)+'</th><th style="padding:3px 6px;border-bottom:1px solid var(--bord);color:var(--mut)">Δ</th></tr>';
+  for(const [label,va,vb,d,mode] of rows){
+    const fa=mode==='exp'?va.toExponential(1):fmt(va,d);
+    const fb=mode==='exp'?vb.toExponential(1):fmt(vb,d);
+    const diff=vb-va;
+    const fdiff=mode==='exp'?diff.toExponential(1):fmt(diff,d);
+    const cls=diff>0?'color:var(--acc2)':(diff<0?'color:var(--danger)':'');
+    html+='<tr><td style="padding:3px 6px;border-bottom:1px solid var(--bord)">'+label+'</td><td style="padding:3px 6px;border-bottom:1px solid var(--bord);text-align:right">'+fa+'</td><td style="padding:3px 6px;border-bottom:1px solid var(--bord);text-align:right">'+fb+'</td><td style="padding:3px 6px;border-bottom:1px solid var(--bord);text-align:right;'+cls+'">'+(diff>0?'+':'')+fdiff+'</td></tr>';
+  }
+  html+='</table>';
+  el.innerHTML=html;
+}
+
+/* ================= Géométrie bouches ================= */
 function effAire(b){
   if(b.type==='rond')return Math.PI*b.dim*b.dim/4;
   if(b.type==='carre'||b.type==='grille')return b.dim*b.dim;
@@ -162,6 +351,28 @@ function effAire(b){
   return b.dim*lf;
 }
 function v0Of(b){return (b.q/3600)/(effAire(b)*0.65);}
+/* v0 fabricant prioritaire ; sinon v0 calculée depuis Q et la section (coeff. de contraction 0,65) */
+function v0Eff(b){return (b.v0&&b.v0>0)?b.v0:v0Of(b);}
+/* Longueur du noyau potentiel du jet : calibrée sur la portée fabricant (throw à vTerm)
+   si renseignée (v(s)=vTerm à s=portee), sinon loi analytique standard sCore = K·dim (K=6,2). */
+function sCoreOf(b,v0){
+  const dim=b.type==='fente'?(b.dim2||0.02):b.dim;
+  const K=6.2,vTerm=(state.sim.vTerm||0.25);
+  let sC=K*dim;
+  if(b.portee&&b.portee>0){
+    /* rond : v(s)=v0·sCore/s = vTerm à s=portée -> sCore = portee·vTerm/v0
+       fente : v(s)=v0·√(sCore/s) = vTerm à s=portée -> sCore = portee·(vTerm/v0)² */
+    sC=b.type==='fente'?b.portee*Math.pow(vTerm/Math.max(v0,1e-6),2):b.portee*vTerm/Math.max(v0,1e-6);
+    sC=clamp(sC,dim,1e6);
+  }
+  return sC;
+}
+/* Portée implicite (m) à vTerm — pour affichage quand le fabricant ne la donne pas */
+function porteeOf(b){
+  const v0=v0Eff(b),vTerm=(state.sim.vTerm||0.25);
+  const sC=sCoreOf(b,v0);
+  return b.type==='fente'?sC*Math.pow(v0/vTerm,2):v0*sC/vTerm;
+}
 function dirVec(b){
   const a=b.dir==='vert'?0:b.dir==='a30'?30:b.dir==='a45'?45:60;
   const az=(b.azi||0)*Math.PI/180, r=a*Math.PI/180;
@@ -195,20 +406,43 @@ function dirOf(b,r){
     default:return dirVec(b);
   }
 }
+
+/* ================= Rendu du panneau ================= */
 function renderPiece(){
   const r=state.room;
-  const t=$('#tranche');
-  if(t){t.max=Math.max(0.3,r.H-0.2);if(state.sim.tranche>r.H-0.2)state.sim.tranche=r.H-0.2;t.value=state.sim.tranche;$('#lblTranche').textContent=fmt(state.sim.tranche,1);}
   $('#piece').innerHTML=['L','l','H'].map(k=>`<label class="f"><span>Dimension ${k} (m)</span><input type="number" step="0.1" min="0.5" value="${r[k]}" oninput="updRoom('${k}',this.value)"></label>`).join('')+
   `<label class="f"><span>Température ambiante (°C)</span><input type="number" step="0.5" value="${r.Tamb}" oninput="updRoom('Tamb',this.value)"></label>
-   <label class="f"><span>Température de soufflage (°C)</span><input type="number" step="0.5" value="${r.Tsouf}" oninput="updRoom('Tsouf',this.value)"></label>`;
+   <label class="f"><span>Température de soufflage (°C)</span><input type="number" step="0.5" value="${r.Tsouf}" oninput="updRoom('Tsouf',this.value)"></label>
+   <label class="f"><span>Température extérieure (°C)</span><input type="number" step="0.5" value="${r.Text==null?r.Tamb:r.Text}" oninput="updRoom('Text',this.value)"></label>`;
 }
+/* ================= Fenêtres sur les parois ================= */
+function renderWindows(){
+  const r=state.room;
+  const murs=Object.keys(MONT_LABEL).filter(k=>k!=='plafond');
+  $('#fenetres').innerHTML=(state.windows||[]).map((w,i)=>{
+    return `<div class="row"><span class="tag" style="background:#3a2f08;color:var(--warn)">Fenêtre ${i+1}</span>
+      <label>mur<select onchange="updWindow(${i},'mur',this.value)">${murs.map(t=>`<option value="${t}" ${w.mur===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
+      <label>pos (m)<input type="number" step="0.1" min="0" value="${w.pos}" oninput="updWindow(${i},'pos',this.value)" title="Position le long du mur (m)"></label>
+      <label>allège z (m)<input type="number" step="0.05" min="0" max="${r.H}" value="${w.z==null?0:w.z}" oninput="updWindow(${i},'z',this.value)" title="Hauteur du bas de la fenêtre (m)"></label>
+      <label>larg. (m)<input type="number" step="0.05" min="0.1" value="${w.larg}" oninput="updWindow(${i},'larg',this.value)"></label>
+      <label>haut. (m)<input type="number" step="0.05" min="0.1" value="${w.haut}" oninput="updWindow(${i},'haut',this.value)"></label>
+      <label>U (W/m²K)<input type="number" step="0.1" min="0.3" max="6" value="${w.u==null?2:w.u}" oninput="updWindow(${i},'u',this.value)" title="Coefficient surfacique du vitrage (W/m²K)"></label>
+      <label>infil. (m³/h)<input type="number" step="1" min="0" value="${w.q||0}" oninput="updWindow(${i},'q',this.value)" title="Débit d'infiltration d'air extérieur à travers la fenêtre (m³/h) — air neuf à T extérieure"></label>
+      <button class="mini" onclick="copierWindow(${i})" title="Dupliquer cette fenêtre">⧉</button><button class="mini" onclick="delWindow(${i})">✕</button></div>`;
+  }).join('')+'<p class="note">Les fenêtres échangent avec l’extérieur à la température extérieure (section 1) via U ; l’infiltration est une entrée d’air neuf à T extérieure, rééquilibrée sur les reprises (le débit total extrait = soufflage + infiltration).</p>';
+}
+function updWindow(i,k,v){marquerPerime();const w=(state.windows||[])[i];if(!w)return;if(k==='mur'){w[k]=v;renderWindows();saveLocal();refreshViews();return;}const x=parseFloat(v);if(!isNaN(x))w[k]=x;saveLocal();refreshViews();}
+function delWindow(i){marquerPerime();state.windows.splice(i,1);renderWindows();saveLocal();refreshViews();}
+function copierWindow(i){marquerPerime();const w=JSON.parse(JSON.stringify(state.windows[i]));w.id=uid++;const len=(w.mur==='murX0'||w.mur==='murX1')?state.room.l:state.room.L;w.pos=clamp((w.pos||0)+0.3,0,Math.max(0,len-(w.larg||0)));state.windows.push(w);renderWindows();saveLocal();refreshViews();}
+function addWindow(){marquerPerime();const r=state.room;const larg=1.2;state.windows.push({id:uid++,mur:'murY0',pos:clamp(r.L/2-larg/2,0,Math.max(0,r.L-larg)),z:0.9,larg:larg,haut:1.4,u:2.0,q:0});renderWindows();saveLocal();refreshViews();}
 function renderSupplies(){
   const r=state.room;
   $('#soufflage').innerHTML=state.supplies.map((b,i)=>{
     const dimLbl=b.type==='rond'?'Ø (m)':(b.type==='carre'||b.type==='grille')?'côté (m)':'longueur (m)';
     const fente=b.type==='fente'?`<label>ép. fente (mm)<input type="number" step="1" min="1" value="${Math.round((b.dim2||0.02)*1000)}" oninput="updSupply(${i},'dim2mm',this.value)"></label>`:'';
     const pl=(!b.montage||b.montage==='plafond')?'':'disabled';
+    const v0e=(b.v0&&b.v0>0)?b.v0:v0Of(b);
+    const pAuto=porteeOf(b);
     return `<div class="row"><span class="tag">Soufflage ${i+1}</span>
       <label>montage<select onchange="updSupply(${i},'montage',this.value)">${Object.keys(MONT_LABEL).map(t=>`<option value="${t}" ${(b.montage||'plafond')===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
       <label>forme<select onchange="updSupply(${i},'type',this.value)">${Object.keys(TYPE_LABEL).map(t=>`<option value="${t}" ${b.type===t?'selected':''}>${TYPE_LABEL[t]}</option>`).join('')}</select></label>
@@ -221,7 +455,10 @@ function renderSupplies(){
       <label>direction<select ${pl} onchange="updSupply(${i},'dir',this.value)">${Object.keys(DIR_LABEL).map(t=>`<option value="${t}" ${b.dir===t?'selected':''}>${DIR_LABEL[t]}</option>`).join('')}</select></label>
       <label>azimut jet (°)<input ${pl} type="number" step="15" min="0" max="360" value="${b.azi||0}" oninput="updSupply(${i},'azi',this.value)"></label>
       <label>rotation (°)<input type="number" step="15" min="-180" max="180" value="${b.ori||0}" oninput="updSupply(${i},'ori',this.value)"></label>
-      <button class="mini" onclick="delSupply(${i})">✕</button></div>`;
+      <label title="Vitesse de soufflage donnée par le fabricant (m/s). Vide = calculée depuis Q et la section de la bouche.">v0 fab (m/s)<input type="number" step="0.1" min="0" placeholder="auto" value="${b.v0||''}" oninput="updSupply(${i},'v0',this.value)"></label>
+      <label title="Portée (throw) donnée par le fabricant : distance à laquelle la vitesse max du jet tombe à vTerm (section 6). Vide = loi analytique standard.">portée fab (m)<input type="number" step="0.5" min="0" placeholder="auto" value="${b.portee||''}" oninput="updSupply(${i},'portee',this.value)"></label>
+      <div style="width:100%;font-size:10.5px;color:var(--mut)">v0 = ${fmt(v0e,2)} m/s${b.v0?' (fabricant)':' (auto depuis Q)'} · portée ≈ ${fmt(b.portee||pAuto,1)} m${b.portee?' (fabricant)':' (auto)'} à vTerm = ${fmt(state.sim.vTerm||0.25,2)} m/s</div>
+      <button class="mini" onclick="copierSupply(${i})" title="Dupliquer cette bouche">⧉</button><button class="mini" onclick="delSupply(${i})">✕</button></div>`;
   }).join('');
 }
 function renderExtracts(){
@@ -238,9 +475,9 @@ function renderExtracts(){
     <label>Y (m)<input type="number" step="0.1" value="${e.y}" oninput="updExtract(${i},'y',this.value)"></label>
     <label>Z (m)<input type="number" step="0.1" value="${e.z==null?r.H:e.z}" oninput="updExtract(${i},'z',this.value)"></label>
     <label>Q (m³/h, vide = auto)<input type="number" step="5" min="0" placeholder="auto" value="${e.q||''}" oninput="updExtract(${i},'q',this.value)"></label>
-    <button class="mini" onclick="delExtract(${i})">✕</button></div>`;
+    <button class="mini" onclick="copierExtract(${i})" title="Dupliquer cette reprise">⧉</button><button class="mini" onclick="delExtract(${i})">✕</button></div>`;
   }).join('')+
-  `<p class="note">Plafond : X, Y = position (Z ignoré). Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur. La taille de la reprise règle la zone d'aspiration. Si la somme des débits de reprise diffère du débit de soufflage, elle est rééquilibrée automatiquement.</p>`;
+  `<p class="note">Si la somme des débits de reprise diffère du débit de soufflage, elle est rééquilibrée automatiquement.</p>`;
 }
 function renderMobilier(){
   $('#mobilier').innerHTML=state.mobilier.map((m,i)=>`<div class="row"><span class="tag" style="background:${PALETTE[i%PALETTE.length]}22;color:${PALETTE[i%PALETTE.length]}">${esc(m.nom)}</span>
@@ -252,696 +489,432 @@ function renderMobilier(){
     <label>L (m)<input type="number" step="0.05" value="${m.L}" oninput="updMeuble(${i},'L',this.value)"></label>
     <label>l (m)<input type="number" step="0.05" value="${m.l}" oninput="updMeuble(${i},'l',this.value)"></label>
     <label>H (m)<input type="number" step="0.05" value="${m.H}" oninput="updMeuble(${i},'H',this.value)"></label>
-    <button class="mini" onclick="delMeuble(${i})">✕</button></div>`).join('');
+    <button class="mini" onclick="copierMeuble(${i})" title="Dupliquer cet élément">⧉</button><button class="mini" onclick="delMeuble(${i})">✕</button></div>`).join('');
 }
 function renderSimParams(){
   const s=state.sim;
   $('#simparams').innerHTML=`
-    <label class="f"><span><input type="checkbox" id="autoD" ${s.autoDuree?'checked':''} style="width:auto" onchange="updAuto(this.checked)"> Durée auto ≈ min(4 × τ nominal, 1 h) (recommandé)</span></label>
-    <label class="f"><span>Durée de simulation (s)</span><input type="number" id="inpDuree" min="10" max="3600" step="10" value="${s.duree}" oninput="updSim('duree',this.value)" ${s.autoDuree?'disabled':''}></label>
-    <label class="f"><span>Nombre de particules</span><input type="number" min="1000" max="30000" step="500" value="${s.nb}" oninput="updSim('nb',this.value)"></label>
-    <label class="f"><span>Vitesse de lecture : <b id="lblVit">${s.vitesse}</b>×</span><input type="range" min="1" max="500" step="1" value="${s.vitesse}" oninput="updSim('vitesse',this.value);$('#lblVit').textContent=this.value.replace('.',',')"></label>`;
+    <label class="f"><span>Résolution de grille (m)</span><select onchange="updSim('res',this.value)">
+      <option value="0.5" ${s.res==0.5?'selected':''}>0,50 (rapide)</option>
+      <option value="0.25" ${s.res==0.25?'selected':''}>0,25 (recommandé)</option>
+      <option value="0.125" ${s.res==0.125?'selected':''}>0,125 (fin, lent)</option></select></label>
+    <label class="f"><span>Diffusion turbulente ν<sub>t0</sub> (m²/s)</span><input type="number" step="0.005" min="0" value="${s.nu0}" oninput="updSim('nu0',this.value)"></label>
+    <label class="f"><span>Coeff. ν<sub>t</sub> = ν<sub>t0</sub> + c·|v|·d<sub>paroi</sub></span><input type="number" step="0.01" min="0" value="${s.cnu}" oninput="updSim('cnu',this.value)"></label>
+    <label class="f"><span>Vitesse terminale des jets vTerm (m/s)</span><input type="number" step="0.05" min="0.05" max="1" value="${s.vTerm}" oninput="updSim('vTerm',this.value)" title="Seuil de vitesse définissant la portée (throw) d'un jet — 0,25 m/s usuellement"></label>
+    <label class="f"><span>Hauteur zone d'occupation (m)</span><input type="number" step="0.1" min="0.5" max="3" value="${s.zocc}" oninput="updSim('zocc',this.value)"></label>
+    <label class="f"><span>Seed aléatoire</span><input type="number" step="1" min="0" value="${s.seed}" oninput="updSim('seed',this.value)"></label>
+    <label class="f"><span>Lignes de courant / bouche</span><input type="number" step="4" min="4" max="64" value="${s.nstream}" oninput="updSim('nstream',this.value)"></label>
+    <label class="f"><span>Itérations max (solveurs)</span><input type="number" step="5000" min="2000" max="60000" value="${s.maxIt}" oninput="updSim('maxIt',this.value)"></label>`;
 }
-function updRoom(k,v){const x=parseFloat(v);if(!isNaN(x))state.room[k]=x;syncTranche();renderExtracts();refreshViews();}
-function updSupply(i,k,v){const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);b.dim2=isNaN(x)?null:x/1000;return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;refreshViews();}
-function delSupply(i){state.supplies.splice(i,1);renderSupplies();refreshViews();}
-function addSupply(){state.supplies.push({id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:state.room.L/2,y:state.room.l/2,z:state.room.H,q:60,dir:'vert',azi:0,ori:0});renderSupplies();refreshViews();}
-function updExtract(i,k,v){const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);e.dim2=isNaN(x)?null:x/1000;return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;refreshViews();}
-function delExtract(i){state.extracts.splice(i,1);renderExtracts();refreshViews();}
-function addExtract(){state.extracts.push({id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:state.room.l-0.3,z:state.room.H,q:0});renderExtracts();refreshViews();}
-function updMeuble(i,k,v){const m=state.mobilier[i];if(k==='nom'){m.nom=v;return;}const x=parseFloat(v);if(!isNaN(x))m[k]=x;refreshViews();}
-function presetMeuble(i,p){const m=state.mobilier[i];m.preset=p;const pr=PRESETS[p];if(pr){m.L=pr.L;m.l=pr.l;m.H=pr.H;}renderMobilier();refreshViews();}
-function delMeuble(i){state.mobilier.splice(i,1);renderMobilier();refreshViews();}
-function addMeuble(){const n=state.mobilier.length+1;state.mobilier.push({id:uid++,preset:'Table',nom:'Élément '+n,x:state.room.L/2,y:state.room.l/2,z:0,L:1.6,l:0.8,H:0.75});renderMobilier();refreshViews();}
-function updSim(k,v){const x=parseFloat(v);if(!isNaN(x))state.sim[k]=x;}
-function updAuto(v){state.sim.autoDuree=v;const el=$('#inpDuree');if(el)el.disabled=v;}
-function changerTranche(v){state.sim.tranche=parseFloat(v);$('#lblTranche').textContent=fmt(parseFloat(v),1);drawHeatmap();}
+function renderAffParams(){
+  const s=state.sim;
+  const r=state.room;
+  const mx=Math.max(0.2,Math.round((r.H-0.1)*10)/10);
+  $('#affparams').innerHTML=`
+    <label class="f"><span>Grandeur affichée</span><select onchange="updSim('grandeur',this.value)">${Object.keys(GRAND_LABEL).map(g=>`<option value="${g}" ${s.grandeur===g?'selected':''}>${GRAND_LABEL[g]}</option>`).join('')}</select></label>
+    <label class="f"><span>Tranche z = <b id="lblTranche">${fmt(s.tranche,1)}</b> m</span><input type="range" id="tranche" min="0.1" max="${mx}" step="0.05" value="${Math.min(s.tranche,mx)}" style="width:160px" oninput="changerTranche(this.value)"></label>`;
+}
+function updRoom(k,v){marquerPerime();const x=parseFloat(v);if(!isNaN(x))state.room[k]=x;saveLocal();renderAffParams();refreshViews();}
+function updSupply(i,k,v){marquerPerime();const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();saveLocal();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);b.dim2=isNaN(x)?null:x/1000;saveLocal();refreshViews();return;}if(k==='v0'||k==='portee'){const x=parseFloat(v);b[k]=(isNaN(x)||x<=0)?null:x;renderSupplies();saveLocal();refreshViews();return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;saveLocal();refreshViews();}
+function delSupply(i){marquerPerime();state.supplies.splice(i,1);renderSupplies();saveLocal();refreshViews();}
+function copierSupply(i){marquerPerime();const b=JSON.parse(JSON.stringify(state.supplies[i]));b.id=uid++;b.x=clamp((b.x||0)+0.3,0,state.room.L);b.y=clamp((b.y||0)+0.3,0,state.room.l);state.supplies.push(b);renderSupplies();saveLocal();refreshViews();}
+function addSupply(){marquerPerime();state.supplies.push({id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:state.room.L/2,y:state.room.l/2,z:state.room.H,q:60,dir:'vert',azi:0,ori:0,v0:null,portee:null});renderSupplies();saveLocal();refreshViews();}
+function updExtract(i,k,v){marquerPerime();const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();saveLocal();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);e.dim2=isNaN(x)?null:x/1000;saveLocal();refreshViews();return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;saveLocal();refreshViews();return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;saveLocal();refreshViews();}
+function delExtract(i){marquerPerime();state.extracts.splice(i,1);renderExtracts();saveLocal();refreshViews();}
+function copierExtract(i){marquerPerime();const e=JSON.parse(JSON.stringify(state.extracts[i]));e.id=uid++;e.x=clamp((e.x||0)+0.3,0,state.room.L);e.y=clamp((e.y||0)+0.3,0,state.room.l);state.extracts.push(e);renderExtracts();saveLocal();refreshViews();}
+function addExtract(){marquerPerime();state.extracts.push({id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:state.room.l-0.3,z:state.room.H,q:0});renderExtracts();saveLocal();refreshViews();}
+function updMeuble(i,k,v){marquerPerime();const m=state.mobilier[i];if(k==='nom'){m.nom=v;saveLocal();return;}const x=parseFloat(v);if(!isNaN(x))m[k]=x;saveLocal();refreshViews();}
+function presetMeuble(i,p){marquerPerime();const m=state.mobilier[i];m.preset=p;const pr=PRESETS[p];if(pr){m.L=pr.L;m.l=pr.l;m.H=pr.H;}renderMobilier();saveLocal();refreshViews();}
+function delMeuble(i){marquerPerime();state.mobilier.splice(i,1);renderMobilier();saveLocal();refreshViews();}
+function copierMeuble(i){marquerPerime();const m=JSON.parse(JSON.stringify(state.mobilier[i]));m.id=uid++;m.x=clamp((m.x||0)+0.3,0,Math.max(0,state.room.L-m.L));m.y=clamp((m.y||0)+0.3,0,Math.max(0,state.room.l-m.l));m.nom=(m.nom||'Élément')+' (copie)';state.mobilier.push(m);renderMobilier();saveLocal();refreshViews();}
+function addMeuble(){marquerPerime();const n=state.mobilier.length+1;state.mobilier.push({id:uid++,preset:'Table',nom:'Élément '+n,x:state.room.L/2,y:state.room.l/2,z:0,L:1.6,l:0.8,H:0.75});renderMobilier();saveLocal();refreshViews();}
+function updSim(k,v){if(k==='grandeur'){state.sim[k]=v;saveLocal();drawHeatmap();return;}const x=parseFloat(v);if(!isNaN(x))state.sim[k]=x;if(k!=='tranche')marquerPerime();saveLocal();}
+function changerTranche(v){state.sim.tranche=parseFloat(v);$('#lblTranche').textContent=fmt(parseFloat(v),1);saveLocal();drawHeatmap();}
+/* Normalise les états chargés (scénarios anciens sans fenêtres / Text / vTerm / v0 / portee) */
+function normalizeState(){
+  if(!Array.isArray(state.windows))state.windows=[];
+  if(state.room.Text==null)state.room.Text=state.room.Tamb;
+  if(state.sim.vTerm==null)state.sim.vTerm=0.25;
+  for(const b of state.supplies){if(b.v0==null)b.v0=null;if(b.portee==null)b.portee=null;}
+}
+function renderAll(){normalizeState();renderPiece();renderWindows();renderSupplies();renderExtracts();renderMobilier();renderSimParams();renderAffParams();updateStats();}
 let _rvPending=false;
-function refreshViews(){
-  if(_rvPending)return;_rvPending=true;
-  requestAnimationFrame(()=>{_rvPending=false;drawHeatmap();render3D();});
-}
-function syncTranche(){
-  const t=$('#tranche');if(!t)return;
-  const mx=Math.max(0.2,Math.round((state.room.H-0.2)*10)/10);
-  t.max=mx;t.min=0.2;
-  if(state.sim.tranche>mx)state.sim.tranche=mx;
-  t.value=state.sim.tranche;
-  $('#lblTranche').textContent=fmt(state.sim.tranche,1);
-}
+function refreshViews(){if(_rvPending)return;_rvPending=true;requestAnimationFrame(()=>{_rvPending=false;drawHeatmap();render3D();});}
 function setView(v){
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   $('#pane3d').style.display=(v==='3d'||v==='both')?'flex':'none';
   $('#pane2d').style.display=(v==='2d'||v==='both')?'flex':'none';
   render3D();drawHeatmap();
 }
-function lancer(){
-  const r=state.room;
-  if(!(r.L>0&&r.l>0&&r.H>0)){alert('Dimensions de la pièce invalides.');return;}
-  if(!state.supplies.length){alert('Ajoutez au moins une bouche d\'insufflation.');return;}
-  if(!state.extracts.length){alert('Ajoutez au moins une bouche d\'extraction.');return;}
-  if(state.supplies.some(b=>!(b.q>0)||!(b.dim>0))){alert('Chaque bouche de soufflage doit avoir un débit et une dimension valides.');return;}
-  if(state.extracts.some(e=>!((e.dim||0)>0))){alert('Chaque reprise doit avoir une dimension valide.');return;}
-  const V=r.L*r.l*r.H;
-  const Qsup=state.supplies.reduce((s,b)=>s+b.q,0);
-  const Qs=Qsup/3600;
-  const exts=state.extracts.map(e=>{const pos=posOf(e,r);const A=effAire(e);return{pos,q:e.q,rs:clamp(2*Math.sqrt(A/Math.PI)+0.25,0.35,0.9),rd:Math.max(0.08,0.15*Math.sqrt(A/Math.PI)+0.05)};});
-  let Qe=exts.reduce((s,e)=>s+e.q,0);
-  let reequilibre=false;
-  if(Math.abs(Qe-Qsup)>0.5){exts.forEach(e=>e.q=Qsup/exts.length);Qe=Qsup;reequilibre=true;}
-  const tauN=V/Qs;
-  const sup=state.supplies.map(b=>{const A=effAire(b);return{...b,A,v0:v0Of(b),r0:Math.sqrt(A/Math.PI),pos:posOf(b,r),dv:dirOf(b,r)};});
-  const cs=0.25;
-  const nx=Math.max(6,Math.round(r.L/cs)),ny=Math.max(6,Math.round(r.l/cs)),nz=Math.max(4,Math.round(r.H/cs));
-  const N=clamp(Math.round(state.sim.nb),500,20000);
-  const T=state.sim.autoDuree?clamp(Math.round(4*tauN),180,3600):clamp(state.sim.duree,10,3600);
-  const dt=clamp(tauN/500,0.05,0.12);
-  const extMain=exts.reduce((a,b)=>((b.q||0)>(a.q||0)?b:a),exts[0]);
-  sim={
-    env:{room:r,furn:state.mobilier.map(m=>({x:m.x,y:m.y,z:m.z,L:m.L,l:m.l,H:m.H})),exts,sup},
-    V,Qsup,Qs,tauN,T,N,dt,tSim:0,
-    parts:[],resTimes:[],nx,ny,nz,csx:r.L/nx,csy:r.l/ny,csz:r.H/nz,
-    cellTime:new Float64Array(nx*ny*nz),cellAge:new Float64Array(nx*ny*nz),
-    running:true,done:false,reequilibre,streams:null,results:null
-  };
-  for(let i=0;i<N;i++)emitParticle();
-  $('#btnLancer').disabled=true;$('#btnPause').disabled=false;$('#btnPause').textContent='⏸ Pause';
-  $('#btnRapport').disabled=true;$('#btnPng').disabled=true;
-  const pg=$('#progress');if(pg)pg.textContent='Simulation lancée…';
-  updateStats();
-  lastT=0;
-  requestAnimationFrame(tick);
+
+/* ================= MOTEUR : régime permanent sur grille 3D ================= */
+const G={};
+let convStage='';
+function idx(i,j,k){return i+G.nx*(j+G.ny*k);}
+function fxi(i,j,k){return i+(G.nx+1)*(j+G.ny*k);}
+function fyi(i,j,k){return i+G.nx*(j+(G.ny+1)*k);}
+function fzi(i,j,k){return i+G.nx*(j+G.ny*k);}
+
+function buildGrid(){
+  const r=state.room,res=state.sim.res;
+  const nx=Math.max(4,Math.round(r.L/res)),ny=Math.max(4,Math.round(r.l/res)),nz=Math.max(3,Math.round(r.H/res));
+  G.nx=nx;G.ny=ny;G.nz=nz;G.res=res;G.N=nx*ny*nz;
+  G.solid=new Uint8Array(G.N);
+  for(const m of state.mobilier){
+    const i0=Math.max(0,Math.floor(m.x/res)),i1=Math.min(nx-1,Math.floor((m.x+m.L)/res));
+    const j0=Math.max(0,Math.floor(m.y/res)),j1=Math.min(ny-1,Math.floor((m.y+m.l)/res));
+    const k0=Math.max(0,Math.floor(m.z/res)),k1=Math.min(nz-1,Math.floor((m.z+m.H)/res));
+    for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)G.solid[idx(i,j,k)]=1;
+  }
+  G.fx=new Float64Array((nx+1)*ny*nz);
+  G.fy=new Float64Array(nx*(ny+1)*nz);
+  G.fz=new Float64Array(nx*ny*(nz+1));
 }
-function emitParticle(){
-  const s=sim,env=s.env;
-  let tot=0;for(const b of env.sup)tot+=b.q;
-  let pick=Math.random()*tot, b=env.sup[0];
-  for(const c of env.sup){pick-=c.q;if(pick<=0){b=c;break;}}
-  let px=b.pos[0]+b.dv[0]*0.03,py=b.pos[1]+b.dv[1]*0.03,pz=b.pos[2]+b.dv[2]*0.03;
-  if(b.type==='fente'){
-    const ax=slotAxes(b),o=rnd(-b.dim/2,b.dim/2),w=gauss()*0.01;
-    px+=ax.long[0]*o+ax.wid[0]*w;py+=ax.long[1]*o+ax.wid[1]*w;pz+=ax.long[2]*o+ax.wid[2]*w;
-  }else if(!b.montage||b.montage==='plafond'){
-    px+=gauss()*b.r0*0.7;py+=gauss()*b.r0*0.7;
-  }else{
-    pz+=rnd(-0.05,0.05);
-    const half=Math.min(b.dim,0.6)/2;
-    if(b.montage==='murX0'||b.montage==='murX1')py+=rnd(-half,half);
-    else px+=rnd(-half,half);
+/* --- Fenêtres sur les murs verticaux : marque les cellules de bord dont la face
+       extérieure donne sur une fenêtre (masques winF*) + coefficient U (winU),
+       et mémorise les cellules fluides adjacentes (sources d'infiltration). --- */
+function buildWindowData(){
+  const r=state.room,res=G.res,{nx,ny,nz}=G;
+  G.winU=new Float64Array(G.N);
+  G.winFx0=new Uint8Array(G.N);G.winFx1=new Uint8Array(G.N);
+  G.winFy0=new Uint8Array(G.N);G.winFy1=new Uint8Array(G.N);
+  G.windows=[];
+  for(const w of (state.windows||[])){
+    const a0=w.pos||0,a1=a0+(w.larg||0),z0=w.z==null?0:w.z,z1=z0+(w.haut||0);
+    const u=(w.u==null||w.u<=0)?2.0:w.u;
+    const inWin=(a,z)=>a>=a0-1e-9&&a<=a1+1e-9&&z>=z0-1e-9&&z<=z1+1e-9;
+    const cells=[];
+    if(w.mur==='murX0'){for(let k=0;k<nz;k++)for(let j=0;j<ny;j++){const c=idx(0,j,k);if(G.solid[c])continue;if(inWin((j+0.5)*res,(k+0.5)*res)){cells.push(c);G.winFx0[c]=1;G.winU[c]=u;}}}
+    else if(w.mur==='murX1'){for(let k=0;k<nz;k++)for(let j=0;j<ny;j++){const c=idx(nx-1,j,k);if(G.solid[c])continue;if(inWin((j+0.5)*res,(k+0.5)*res)){cells.push(c);G.winFx1[c]=1;G.winU[c]=u;}}}
+    else if(w.mur==='murY0'){for(let k=0;k<nz;k++)for(let i=0;i<nx;i++){const c=idx(i,0,k);if(G.solid[c])continue;if(inWin((i+0.5)*res,(k+0.5)*res)){cells.push(c);G.winFy0[c]=1;G.winU[c]=u;}}}
+    else if(w.mur==='murY1'){for(let k=0;k<nz;k++)for(let i=0;i<nx;i++){const c=idx(i,ny-1,k);if(G.solid[c])continue;if(inWin((i+0.5)*res,(k+0.5)*res)){cells.push(c);G.winFy1[c]=1;G.winU[c]=u;}}}
+    G.windows.push({w:w,cells:cells});
   }
-  s.parts.push({
-    x:clamp(px,0.02,env.room.L-0.02),y:clamp(py,0.02,env.room.l-0.02),z:clamp(pz,0.02,env.room.H-0.02),
-    vx:b.dv[0]*b.v0,vy:b.dv[1]*b.v0,vz:b.dv[2]*b.v0,
-    age:0,Tp:env.room.Tsouf,r0:b.r0
-  });
 }
-function advect(p,dt,env){
-  const r=env.room;
-  const sp=Math.sqrt(p.vx*p.vx+p.vy*p.vy+p.vz*p.vz)||1e-6;
-  const f=1/(1+0.16*sp*dt/(2*p.r0));
-  const drag=1-0.4*dt;
-  p.vx*=f*drag;p.vy*=f*drag;p.vz*=f*drag;
-  if(r.Tsouf!==r.Tamb){
-    p.vz+=9.81*(1/293)*(p.Tp-r.Tamb)*dt;
-    p.Tp+=(r.Tamb-p.Tp)*dt/3;
+function spreadCells(p,b){
+  const res=G.res,out=[];
+  const ax=slotAxes(b);
+  const nrm=b.montage==='murX0'?[1,0,0]:b.montage==='murX1'?[-1,0,0]:b.montage==='murY0'?[0,1,0]:b.montage==='murY1'?[0,-1,0]:[0,0,1];
+  const ci=clamp(Math.floor(p[0]/res),0,G.nx-1),cj=clamp(Math.floor(p[1]/res),0,G.ny-1),ck=clamp(Math.floor(p[2]/res),0,G.nz-1);
+  const R=Math.max(2,Math.ceil(Math.max(b.dim,b.dim2||0)/res)+1);
+  const halfL=b.dim/2+res/2, halfW=((b.type==='fente'&&b.dim2)?b.dim2:b.dim)/2+res/2;
+  for(let k=Math.max(0,ck-R);k<=Math.min(G.nz-1,ck+R);k++)
+   for(let j=Math.max(0,cj-R);j<=Math.min(G.ny-1,cj+R);j++)
+    for(let i=Math.max(0,ci-R);i<=Math.min(G.nx-1,ci+R);i++){
+      const c=idx(i,j,k);if(G.solid[c])continue;
+      const dx=(i+0.5)*res-p[0],dy=(j+0.5)*res-p[1],dz=(k+0.5)*res-p[2];
+      const dn=Math.abs(dx*nrm[0]+dy*nrm[1]+dz*nrm[2]);
+      const along=dx*ax.long[0]+dy*ax.long[1]+dz*ax.long[2];
+      const across=dx*ax.wid[0]+dy*ax.wid[1]+dz*ax.wid[2];
+      if(dn<=res*1.01&&Math.abs(along)<=halfL&&Math.abs(across)<=halfW)out.push(c);
+    }
+  if(!out.length){
+    const nf=nearestFluid(ci,cj,ck);
+    if(nf>=0){out.push(nf);G._moved=true;}
+    else out.push(idx(ci,cj,ck));
   }
-  const Dt=0.01,sd=Math.sqrt(2*Dt*dt);
-  p.x+=p.vx*dt+ru()*sd;p.y+=p.vy*dt+ru()*sd;p.z+=p.vz*dt+ru()*sd;
-  const em=env.extMain;
-  if(em){
-    const ex=em.pos[0]-p.x,ey=em.pos[1]-p.y,ez=em.pos[2]-p.z;
-    const ed=Math.sqrt(ex*ex+ey*ey+ez*ez)||1e-6;
-    p.vx+=((ex/ed)*env.vd-p.vx)*0.8*dt;p.vy+=((ey/ed)*env.vd-p.vy)*0.8*dt;p.vz+=((ez/ed)*env.vd-p.vz)*0.8*dt;
-  }
-  if(p.x<0){p.x=0;p.vx=Math.abs(p.vx)*0.35;}
-  if(p.x>r.L){p.x=r.L;p.vx=-Math.abs(p.vx)*0.35;}
-  if(p.y<0){p.y=0;p.vy=Math.abs(p.vy)*0.35;}
-  if(p.y>r.l){p.y=r.l;p.vy=-Math.abs(p.vy)*0.35;}
-  if(p.z<0){p.z=0;p.vz=Math.abs(p.vz)*0.35;p.vx*=0.97;p.vy*=0.97;}
-  if(p.z>r.H){p.z=r.H;p.vz=-Math.abs(p.vz)*0.35;}
-  for(const m of env.furn){
-    const x1=m.x-m.L/2,x2=m.x+m.L/2,y1=m.y-m.l/2,y2=m.y+m.l/2,z1=m.z,z2=m.z+m.H;
-    if(p.x>x1-0.02&&p.x<x2+0.02&&p.y>y1-0.02&&p.y<y2+0.02&&p.z>z1-0.02&&p.z<z2+0.02){
-      const d=[p.x-x1,x2-p.x,p.y-y1,y2-p.y,p.z-z1,z2-p.z];
-      let mi=0;for(let k=1;k<6;k++)if(d[k]<d[mi])mi=k;
-      if(mi===0){p.x=x1-0.02;p.vx=-Math.abs(p.vx)*0.3;}
-      else if(mi===1){p.x=x2+0.02;p.vx=Math.abs(p.vx)*0.3;}
-      else if(mi===2){p.y=y1-0.02;p.vy=-Math.abs(p.vy)*0.3;}
-      else if(mi===3){p.y=y2+0.02;p.vy=Math.abs(p.vy)*0.3;}
-      else if(mi===4){p.z=z1-0.02;p.vz=-Math.abs(p.vz)*0.3;}
-      else{p.z=z2+0.02;p.vz=Math.abs(p.vz)*0.3;}
-      break;
+  return out;
+}
+function nearestFluid(ci,cj,ck){
+  if(ci<0||cj<0||ck<0||ci>=G.nx||cj>=G.ny||ck>=G.nz)return -1;
+  const c0=idx(ci,cj,ck);
+  if(!G.solid[c0])return c0;
+  const seen=new Uint8Array(G.N),q=[c0];seen[c0]=1;
+  let head=0;
+  while(head<q.length){
+    const c=q[head++];
+    const i=c%G.nx,j=Math.floor(c/G.nx)%G.ny,k=Math.floor(c/(G.nx*G.ny));
+    const nbs=[[i-1,j,k],[i+1,j,k],[i,j-1,k],[i,j+1,k],[i,j,k-1],[i,j,k+1]];
+    for(const [a,b,d] of nbs){
+      if(a<0||b<0||d<0||a>=G.nx||b>=G.ny||d>=G.nz)continue;
+      const n=idx(a,b,d);
+      if(seen[n])continue;
+      seen[n]=1;
+      if(!G.solid[n])return n;
+      q.push(n);
     }
   }
-  for(const e of env.exts){
-    const dx=e.pos[0]-p.x,dy=e.pos[1]-p.y,dz=e.pos[2]-p.z;
-    const d=Math.sqrt(dx*dx+dy*dy+dz*dz);
-    if(d<e.rs){
-      const s=1.2+2.8*(1-d/e.rs);
-      p.vx=p.vx*0.8+(dx/(d||1e-6))*s*0.2;
-      p.vy=p.vy*0.8+(dy/(d||1e-6))*s*0.2;
-      p.vz=p.vz*0.8+(dz/(d||1e-6))*s*0.2;
-      if(d<e.rd)return 1;
-    }
-  }
-  if(p.age>4*sim.tauN)return 2;
-  return 0;
+  return -1;
 }
-function stepSim(dt){
-  const s=sim,env=s.env;
-  s.tSim+=dt;
-  const parts=s.parts;
-  for(let i=parts.length-1;i>=0;i--){
-    const p=parts[i];
-    p.age+=dt;
-    const st=advect(p,dt,env);
-    const ci=clamp(Math.floor(p.x/s.csx),0,s.nx-1),cj=clamp(Math.floor(p.y/s.csy),0,s.ny-1),ck=clamp(Math.floor(p.z/s.csz),0,s.nz-1);
-    const idx=ci+s.nx*(cj+s.ny*ck);
-    s.cellTime[idx]+=dt;s.cellAge[idx]+=p.age*dt;
-    if(st!==0){s.resTimes.push(p.age);parts[i]=parts[parts.length-1];parts.pop();}
-  }
-}
-let lastT=0,lastProg=0;
-function tick(ts){
-  if(!sim||!sim.running)return;
-  const realDt=Math.min(0.1,((ts-lastT)/1000)||0.016);
-  lastT=ts;
-  const steps=Math.min(4000,Math.max(1,Math.floor(state.sim.vitesse*realDt/sim.dt)));
-  for(let k=0;k<steps&&sim.tSim<sim.T;k++)stepSim(sim.dt);
-  render3D();
-  if(ts-lastProg>400){
-    lastProg=ts;
-    drawHeatmap();
-    const el=$('#progress');
-    if(el&&sim)el.textContent='Simulation en cours : '+fmt(sim.tSim,0)+' / '+fmt(sim.T,0)+' s ('+Math.round(100*sim.tSim/sim.T)+' %) — particules restantes : '+sim.parts.length;
-  }
-  if(sim.tSim>=sim.T||sim.parts.length===0)finishSim();
-  else requestAnimationFrame(tick);
-}
-function pauseReprendre(){
-  if(!sim)return;
-  sim.running=!sim.running;
-  $('#btnPause').textContent=sim.running?'⏸ Pause':'▶ Reprendre';
-  if(sim.running){lastT=0;requestAnimationFrame(tick);}
-}
-function reinitSim(){
-  if(sim&&sim.running)return;
-  sim=null;
-  $('#btnLancer').disabled=false;$('#btnPause').disabled=true;$('#btnRapport').disabled=true;$('#btnPng').disabled=true;
-  const pg=$('#progress');if(pg)pg.textContent='';
-  updateStats();drawHeatmap();render3D();
-}
-function finishSim(){
-  const s=sim;
-  s.running=false;s.done=true;
-  const n=s.nx*s.ny*s.nz;
-  const pct=new Float64Array(n).fill(NaN);
-  let valid=0,sumPct=0,over100=0,sumAge=0;
-  for(let c=0;c<n;c++){
-    if(s.cellTime[c]>1.5){
-      const ma=s.cellAge[c]/s.cellTime[c];
-      pct[c]=100*s.tauN/ma;
-      valid++;sumPct+=pct[c];sumAge+=ma;
-      if(pct[c]>=100)over100++;
-    }
-  }
-  const res=s.resTimes;
-  const resMoy=res.length?res.reduce((a,b)=>a+b,0)/res.length:NaN;
-  const resOK=res.length?res.filter(a=>a<=s.tauN).length/res.length*100:NaN;
-  s.results={
-    pct,nx:s.nx,ny:s.ny,nz:s.nz,csx:s.csx,csy:s.csy,csz:s.csz,
-    effMoy:valid?sumPct/valid:NaN,
-    pctVol100:valid?over100/valid*100:NaN,
-    ageMoy:valid?sumAge/valid:NaN,
-    resMoy,resOK,renouv:res.length?100*res.length/s.N:0,renouvTheo:100*(1-Math.exp(-s.T/s.tauN)),
-    ach:3600*s.Qs/s.V,valid
-  };
-  const pg=$('#progress');
-  if(pg)pg.textContent='Simulation terminée : '+fmt(s.resTimes.length,0)+' / '+s.N+' particules extraites avant '+fmt(s.T,0)+' s ('+fmt(100*s.resTimes.length/s.N,0)+' %).';
-  buildStreamlines();
-  updateStats();drawHeatmap();render3D();
-  $('#btnPause').disabled=true;$('#btnLancer').disabled=false;
-  $('#btnRapport').disabled=false;$('#btnPng').disabled=false;
-}
-function buildStreamlines(){
-  const s=sim,env=s.env;
-  s.streams=[];
-  for(const b of env.sup){
-    const ax=slotAxes(b);
-    for(let k=0;k<16;k++){
-      let ox,oy,oz;
-      if(b.type==='fente'){
-        const o=(k/15-0.5)*b.dim*0.94,w=gauss()*0.01;
-        ox=ax.long[0]*o+ax.wid[0]*w;oy=ax.long[1]*o+ax.wid[1]*w;oz=ax.long[2]*o+ax.wid[2]*w;
-      }else{
-        ox=gauss()*b.r0*0.5;oy=gauss()*b.r0*0.5;oz=gauss()*b.r0*0.5;
-      }
-      const p={x:b.pos[0]+b.dv[0]*0.03+ox,y:b.pos[1]+b.dv[1]*0.03+oy,z:b.pos[2]+b.dv[2]*0.03+oz,
-        vx:b.dv[0]*b.v0,vy:b.dv[1]*b.v0,vz:b.dv[2]*b.v0,age:0,Tp:env.room.Tsouf,r0:b.r0};
-      const pts=[];
-      for(let st=0;st<700;st++){
-        p.age+=0.05;
-        const r=advect(p,0.06,env);
-        if(st%4===0)pts.push([p.x,p.y,p.z,Math.sqrt(p.vx*p.vx+p.vy*p.vy+p.vz*p.vz)]);
-        if(r!==0||pts.length>160)break;
-      }
-      if(pts.length>3)s.streams.push(pts);
-    }
-  }
-}
-function updateStats(){
-  const r=state.room,V=r.L*r.l*r.H;
-  const Qsup=state.supplies.reduce((s,b)=>s+b.q,0);
-  const tauN=V/(Qsup/3600);
-  let h=`<div class="stat"><b>${fmt(Qsup,0)} m³/h</b><span>débit d'insufflation total</span></div>
-  <div class="stat"><b>${fmt(V,1)} m³</b><span>volume de la pièce</span></div>
-  <div class="stat"><b>${fmt(tauN/60,1)} min</b><span>τ nominal = V/Q</span></div>
-  <div class="stat"><b>${fmt(3600*Qsup/3600/V,1)} h⁻¹</b><span>taux de renouvellement (ACH)</span></div>`;
-  if(sim&&sim.results){
-    const R=sim.results;
-    h+=`<div class="stat"><b>${fmt(R.effMoy,0)} %</b><span>taux de balayage moyen (pondéré volume)</span></div>
-    <div class="stat"><b>${fmt(R.pctVol100,0)} %</b><span>du volume avec balayage ≥ 100 %</span></div>
-    <div class="stat"><b>${fmt(R.renouv,0)} %</b><span>air renouvelé après ${fmt(sim.T,0)} s (simulé ; ${fmt(R.renouvTheo,0)} % théorique)</span></div>
-    <div class="stat"><b>${fmt(R.resMoy/60,1)} min</b><span>temps de résidence moyen (particules extraites)</span></div>
-    <div class="stat"><b>${fmt(R.resOK,0)} %</b><span>des particules extraites en moins d'un τ nominal</span></div>
-    <div class="stat"><b>${fmt(100*sim.resTimes.length/sim.N,0)} %</b><span>des particules extraites avant ${fmt(sim.T,0)} s</span></div>`;
-    if(sim.reequilibre)h+=`<div class="stat" style="border-color:var(--warn)"><b style="color:var(--warn)">⚠</b><span>débits d'extraction rééquilibrés automatiquement</span></div>`;
-    const vmax=state.supplies.reduce((m,b)=>Math.max(m,v0Of(b)),0);
-    if(vmax>25)h+=`<div class="stat" style="border-color:var(--warn)"><b style="color:var(--warn)">⚠ ${fmt(vmax,1)} m/s</b><span>vitesse de soufflage max élevée</span></div>`;
-  }else{
-    h+=`<div class="stat"><b>—</b><span>lancez la simulation pour obtenir les résultats</span></div>`;
-  }
-  $('#stats').innerHTML=h;
-}
-function sweepColor(p,lo,hi){
-  if(p==null||isNaN(p))return'#6b7280';
-  const t=clamp(Math.log(p/lo)/Math.log(hi/lo),0,1);
-  return`hsl(${225-225*t},90%,${45+10*t}%)`;
-}
-function speedColor(v){const t=clamp(v/6,0,1);return`hsl(${220-220*t},85%,58%)`;}
-function ageColor(a,tau){const t=clamp(a/(2*tau),0,1);return`hsl(${210-210*t},85%,58%)`;}
-function drawHeatmap(){
-  const c=$('#heatmap'),x=c.getContext('2d');
-  const W=c.width,H=c.height,r=state.room;
-  x.clearRect(0,0,W,H);
-  x.fillStyle='#101826';x.fillRect(0,0,W,H);
-  const legW=110,pad=14;
-  const aw=W-legW-pad*2,ah=H-pad*2;
-  const sc=Math.min(aw/r.L,ah/r.l);
-  const ox=pad+(aw-r.L*sc)/2,oy=pad+(ah-r.l*sc)/2;
-  window.__hm={ox,oy,sc};window.__hits=[];
-  const P=(px,py)=>[ox+px*sc,oy+(r.l-py)*sc];
-  let nx,ny,nz,csx,csy,csz,pct;
-  if(sim){nx=sim.nx;ny=sim.ny;nz=sim.nz;csx=sim.csx;csy=sim.csy;csz=sim.csz;pct=sim.done?sim.results.pct:null;}
-  else{nx=Math.max(6,Math.round(r.L/0.25));ny=Math.max(6,Math.round(r.l/0.25));nz=Math.max(4,Math.round(r.H/0.25));csx=r.L/nx;csy=r.l/ny;csz=r.H/nz;pct=null;}
-  const z=state.sim.tranche;
-  const k=clamp(Math.floor(z/csz),0,nz-1);
-  const seuil=sim&&!sim.done?0.8:1.5;
-  const cells=new Array(nx*ny).fill(null);
-  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
-    let v=null;
-    if(sim){
-      const idx=i+nx*(j+ny*k);
-      if(pct){const c=pct[idx];if(c!=null&&!isNaN(c))v=c;}
-      else{const ct=sim.cellTime[idx];if(ct>seuil)v=100*sim.tauN/(sim.cellAge[idx]/ct);}
-    }
-    cells[j*nx+i]=v;
-  }
-  const vals=cells.filter(v=>v!=null&&!isNaN(v)).sort((a,b)=>a-b);
-  let lo=25,hi=400;
-  if(vals.length){
-    const q=f=>vals[clamp(Math.floor(f*vals.length),0,vals.length-1)];
-    lo=Math.min(q(0.05),25);
-    hi=Math.max(q(0.95),100,lo*4);
-  }
-  window.__scale={lo,hi};
-  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
-    const v=cells[j*nx+i];
-    const[a,b]=P(i*csx,(j+1)*csy);
-    x.fillStyle=sweepColor(v,lo,hi);
-    x.fillRect(a,b,csx*sc-0.5,csy*sc-0.5);
-  }
-  x.strokeStyle='#e8eef6';x.lineWidth=2.5;
-  const[c0,c1]=P(0,0),[c2,c3]=P(r.L,r.l);
-  x.strokeRect(c0,c1,c2-c0,c3-c1);
-  x.fillStyle='#9fb0c3';x.font='bold 11px sans-serif';
-  x.fillText('X →',c2-34,(c1+c3)/2+4);
-  x.fillText('Y ↑',(c0+c2)/2-6,c1+14);
-  x.strokeStyle='#475569';x.lineWidth=1;x.setLineDash([4,4]);
-  for(let gx=0.5;gx<r.L;gx+=0.5){const[a,b]=P(gx,0),[a2,b2]=P(gx,r.l);x.beginPath();x.moveTo(a,b);x.lineTo(a2,b2);x.stroke();}
-  for(let gy=0.5;gy<r.l;gy+=0.5){const[a,b]=P(0,gy),[a2,b2]=P(r.L,gy);x.beginPath();x.moveTo(a,b);x.lineTo(a2,b2);x.stroke();}
-  x.setLineDash([]);
-  state.mobilier.forEach((m,i)=>{
-    const[a,b]=P(m.x-m.L/2,m.y-m.l/2),[a2,b2]=P(m.x+m.L/2,m.y+m.l/2);
-    x.fillStyle=PALETTE[i%PALETTE.length]+'55';x.fillRect(a,b,a2-a,b2-b);
-    x.strokeStyle=PALETTE[i%PALETTE.length];x.lineWidth=1.5;x.strokeRect(a,b,a2-a,b2-b);
-    x.fillStyle='#fff';x.font='10px sans-serif';x.fillText(m.nom,a+3,b+12);
-    window.__hits.push({k:'m',i,x:Math.min(a,a2),y:Math.min(b,b2),w:Math.abs(a2-a),h:Math.abs(b2-b)});
-  });
+function computeSources(){
+  const r=state.room,res=G.res,vol=res*res*res;
+  const Text=(r.Text==null?r.Tamb:r.Text);
+  const Qs=state.supplies.map(b=>b.q/3600),Qtot=Qs.reduce((a,b)=>a+b,0);
+  let Qinf=0;for(const w of (state.windows||[]))Qinf+=(w.q||0)/3600;
+  const Qout=Qtot+Qinf; /* débit total extrait = soufflage + infiltration (conservation de la masse) */
+  let Qe=state.extracts.map(e=>e.q>0?e.q/3600:0);
+  const sumQe=Qe.reduce((a,b)=>a+b,0);
+  if(state.extracts.length&&(sumQe<=0||Math.abs(sumQe-Qout)>1e-9))Qe=state.extracts.map(()=>Qout/state.extracts.length);
+  else if(state.extracts.length){const f=Qout/sumQe;Qe=Qe.map(q=>q*f);}
+  G.S=new Float64Array(G.N);
+  G.dirMask=new Uint8Array(G.N);
+  G.extMask=new Uint8Array(G.N);
+  G.dirValT=new Float64Array(G.N).fill(r.Tsouf); /* température de Dirichlet par cellule (soufflages = Tsouf, fenêtres = Text) */
+  G.supplyCells=[];G.extractCells=[];G.warn=[];
   state.supplies.forEach((b,i)=>{
-    const pp=posOf(b,r);const[a,bb]=P(pp[0],pp[1]);const rad=Math.max(4,Math.min(b.dim,0.5)*sc/2);
-    x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;
-    const ax=slotAxes(b);
-    if(b.type==='rond'){x.beginPath();x.arc(a,bb,rad,0,7);x.fill();x.stroke();}
-    else if(b.type==='carre'||b.type==='grille'){x.beginPath();x.rect(a-rad,bb-rad,rad*2,rad*2);x.fill();x.stroke();}
-    else{
-      const hl=Math.min(b.dim,Math.max(r.L,r.l))/2;
-      const[a1,b1]=P(pp[0]-ax.long[0]*hl,pp[1]-ax.long[1]*hl),[a2,b2]=P(pp[0]+ax.long[0]*hl,pp[1]+ax.long[1]*hl);
-      x.save();x.strokeStyle='#34d399';x.fillStyle='#34d399';x.lineWidth=6;x.lineCap='round';
-      x.beginPath();x.moveTo(a1,b1);x.lineTo(a2,b2);x.stroke();x.restore();
-    }
-    const d=dirOf(b,r),dl=Math.hypot(d[0],d[1]);
-    if(dl>0.01){
-      const t0=Math.max(rad,6)/sc;
-      const[s1x,s1y]=P(pp[0]+d[0]/dl*t0,pp[1]+d[1]/dl*t0),[s2x,s2y]=P(pp[0]+d[0]/dl*0.5,pp[1]+d[1]/dl*0.5);
-      const ang=Math.atan2(s2y-s1y,s2x-s1x);
-      x.strokeStyle='#d1fae5';x.lineWidth=1.5;
-      x.beginPath();x.moveTo(s1x,s1y);x.lineTo(s2x,s2y);
-      x.moveTo(s2x,s2y);x.lineTo(s2x-8*Math.cos(ang-0.4),s2y-8*Math.sin(ang-0.4));
-      x.moveTo(s2x,s2y);x.lineTo(s2x-8*Math.cos(ang+0.4),s2y-8*Math.sin(ang+0.4));x.stroke();
-    }
-    x.fillStyle='#d1fae5';x.font='bold 10px sans-serif';x.fillText(b.q+' m³/h',a+Math.max(rad,12)+3,bb+3);
-    window.__hits.push({k:'s',i,x:a,y:bb,r:15});
+    const p=posOf(b,r);G._moved=false;
+    const cells=spreadCells(p,b);
+    if(G._moved)G.warn.push('Soufflage S'+(i+1)+' : position dans un obstacle, ouverture déplacée à la cellule libre la plus proche.');
+    cells.forEach(c=>{G.S[c]+=Qs[i]/cells.length/vol;G.dirMask[c]=1;});
+    G.supplyCells.push({cells,q:Qs[i],b,p});
   });
   state.extracts.forEach((e,i)=>{
-    const pp=posOf(e,r);const[a,b]=P(pp[0],pp[1]);
-    x.strokeStyle='#f87171';x.lineWidth=2.5;
-    x.beginPath();x.moveTo(a-6,b-6);x.lineTo(a+6,b+6);x.moveTo(a+6,b-6);x.lineTo(a-6,b+6);x.stroke();
-    x.fillStyle='#fecaca';x.font='10px sans-serif';x.fillText('reprise',a+8,b-6);
-    window.__hits.push({k:'e',i,x:a,y:b,r:15});
+    const p=posOf(e,r);G._moved=false;
+    const cells=spreadCells(p,e);
+    if(G._moved)G.warn.push('Reprise R'+(i+1)+' : position dans un obstacle, ouverture déplacée à la cellule libre la plus proche.');
+    cells.forEach(c=>{G.S[c]-=Qe[i]/cells.length/vol;G.extMask[c]=1;});
+    G.extractCells.push({cells,q:Qe[i],e,p});
   });
-  const lx=W-legW+8,ly=pad,lh=ah;
-  const gr=x.createLinearGradient(0,ly,0,ly+lh);
-  for(let t=0;t<=1.001;t+=0.05){gr.addColorStop(t,sweepColor(hi*Math.pow(lo/hi,t),lo,hi));}
-  x.fillStyle=gr;x.fillRect(lx,ly,22,lh);
-  x.strokeStyle='#64748b';x.lineWidth=1;x.strokeRect(lx,ly,22,lh);
-  x.fillStyle='#e8eef6';x.font='11px sans-serif';
-  const fmtP=v=>fmt(v>=999.5?999:v,0)+' %';
-  const lg=Math.log,rel=v=>clamp(lg(v/lo)/lg(hi/lo),0,1);
-  [hi,Math.sqrt(lo*hi),lo].forEach(v=>{
-    const yy=ly+lh-rel(v)*lh;
-    x.fillText(fmtP(v),lx+28,yy+4);
-    x.strokeStyle='#64748b';x.beginPath();x.moveTo(lx,yy);x.lineTo(lx+22,yy);x.stroke();
-  });
-  if(lo<100&&hi>100){
-    const yy=ly+lh-rel(100)*lh;
-    x.strokeStyle='#fff';x.beginPath();x.moveTo(lx,yy);x.lineTo(lx+22,yy);x.stroke();
-    x.fillText('100 % (τ)',lx+28,yy-6);
+  /* Fenêtres : l'infiltration est une entrée d'air neuf (âge 0) à T extérieure,
+     répartie sur les cellules fluides adjacentes à la fenêtre */
+  for(const wd of (G.windows||[])){
+    const q=(wd.w.q||0)/3600;
+    if(q>0&&wd.cells.length)wd.cells.forEach(c=>{G.S[c]+=q/wd.cells.length/vol;G.dirMask[c]=1;G.dirValT[c]=Text;});
   }
-  x.fillStyle='#9fb0c3';x.font='11px sans-serif';
-  x.fillText('Taux de balayage local = τnominal / âge moyen de l’air × 100 % — échelle adaptée à la tranche (log), 100 % = mélange parfait',pad,H-8);
-  x.fillText(`Tranche horizontale z = ${fmt(z,1)} m — gris : zone non balayée (donnée insuffisante)`,pad,pad-2+12);
-  x.fillStyle='#34d399';x.fillText('■ insufflation',W-legW-100,H-8);
-  x.fillStyle='#f87171';x.fillText('✕ extraction',W-legW-30,H-8);
+  G.Qtot=Qtot;G.Qinf=Qinf;G.volRoom=r.L*r.l*r.H;
+  G.tauN=G.volRoom/Math.max(Qout,1e-9);
+  G.ACH=3600/G.tauN;
 }
-function telechargerHeatmap(){
-  const a=document.createElement('a');
-  a.href=$('#heatmap').toDataURL('image/png');
-  a.download='heatmap-balayage-ventilation.png';
-  a.click();
+/* --- Poisson : laplacien(p)=rhs, Neumann. useFaces=true -> ghost=p[c]+-res*vf (projection) --- */
+function gsPoisson(p,rhs,i,j,k,useFaces){
+  const {nx,ny,nz}=G,res=G.res;
+  const c=idx(i,j,k);
+  let sum=0,ng=0,gt=0;
+  if(i>0){const nb=idx(i-1,j,k);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt-=res*G.fx[fxi(i,j,k)];}
+  if(i<nx-1){const nb=idx(i+1,j,k);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt+=res*G.fx[fxi(i+1,j,k)];}
+  if(j>0){const nb=idx(i,j-1,k);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt-=res*G.fy[fyi(i,j,k)];}
+  if(j<ny-1){const nb=idx(i,j+1,k);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt+=res*G.fy[fyi(i,j+1,k)];}
+  if(k>0){const nb=idx(i,j,k-1);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt-=res*G.fz[fzi(i,j,k)];}
+  if(k<nz-1){const nb=idx(i,j,k+1);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt+=res*G.fz[fzi(i,j,k+1)];}
+  p[c]=(sum+gt-res*res*rhs[c])/(6-ng);
 }
-const view={theta:Math.PI,phi:0.5,dist:14};
-function camBasis(){
-  const r=state.room;
-  const t=[r.L/2,r.l/2,r.H/2];
-  const cp=Math.cos(view.phi),sp=Math.sin(view.phi),ct=Math.cos(view.theta),st=Math.sin(view.theta);
-  const cam=[t[0]+view.dist*cp*st,t[1]+view.dist*cp*ct,t[2]+view.dist*sp];
-  const fwd=[t[0]-cam[0],t[1]-cam[1],t[2]-cam[2]];
-  const fl=Math.hypot(...fwd);fwd[0]/=fl;fwd[1]/=fl;fwd[2]/=fl;
-  let right=[fwd[1],-fwd[0],0];const rl=Math.hypot(right[0],right[1]);
-  if(rl<1e-6)right=[1,0,0];else{right[0]/=rl;right[1]/=rl;}
-  const up=[right[1]*fwd[2]-right[2]*fwd[1],right[2]*fwd[0]-right[0]*fwd[2],right[0]*fwd[1]-right[1]*fwd[0]];
-  return{cam,right,up,fwd,t};
+function lapRes(p,rhs,i,j,k,useFaces){
+  const {nx,ny,nz}=G,res=G.res;
+  const c=idx(i,j,k);
+  let sum=0,ng=0,gt=0;
+  if(i>0){const nb=idx(i-1,j,k);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt-=res*G.fx[fxi(i,j,k)];}
+  if(i<nx-1){const nb=idx(i+1,j,k);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt+=res*G.fx[fxi(i+1,j,k)];}
+  if(j>0){const nb=idx(i,j-1,k);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt-=res*G.fy[fyi(i,j,k)];}
+  if(j<ny-1){const nb=idx(i,j+1,k);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt+=res*G.fy[fyi(i,j+1,k)];}
+  if(k>0){const nb=idx(i,j,k-1);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt-=res*G.fz[fzi(i,j,k)];}
+  if(k<nz-1){const nb=idx(i,j,k+1);if(G.solid[nb])ng++;else sum+=p[nb];}else{ng++;if(useFaces)gt+=res*G.fz[fzi(i,j,k+1)];}
+  return (sum+ng*p[c]+gt-6*p[c])/(res*res)-rhs[c];
 }
-function render3D(){
-  const c=$('#view3d');
-  const pane=c.parentElement;
-  const dpr=window.devicePixelRatio||1;
-  const w=pane.clientWidth,h=pane.clientHeight;
-  if(w<50||h<50)return;
-  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);c.style.width=w+'px';c.style.height=h+'px';}
-  const x=c.getContext('2d');
-  x.setTransform(dpr,0,0,dpr,0,0);
-  x.clearRect(0,0,w,h);
-  const g=x.createLinearGradient(0,0,0,h);
-  g.addColorStop(0,'#16202e');g.addColorStop(1,'#0c1420');
-  x.fillStyle=g;x.fillRect(0,0,w,h);
-  const r=state.room;
-  const B=camBasis();
-  const f=Math.min(w,h)*0.95;
-  const cx=w/2,cy=h/2;
-  function proj(p){
-    const dx=p[0]-B.cam[0],dy=p[1]-B.cam[1],dz=p[2]-B.cam[2];
-    const z=dx*B.fwd[0]+dy*B.fwd[1]+dz*B.fwd[2];
-    if(z<0.15)return null;
-    const px=dx*B.right[0]+dy*B.right[1]+dz*B.right[2];
-    const py=dx*B.up[0]+dy*B.up[1]+dz*B.up[2];
-    return[cx+f*px/z,cy-f*py/z,z];
+function rbLists(){
+  if(G.rb)return G.rb;
+  const red=[],black=[];
+  for(let k=0;k<G.nz;k++)for(let j=0;j<G.ny;j++)for(let i=0;i<G.nx;i++){
+    const c=idx(i,j,k);if(G.solid[c])continue;
+    ((i+j+k)%2===0?red:black).push([i,j,k]);
   }
-  const items=[];
-  const corners={};
-  const defs=[[0,0,0],[r.L,0,0],[r.L,r.l,0],[0,r.l,0],[0,0,r.H],[r.L,0,r.H],[r.L,r.l,r.H],[0,r.l,r.H]];
-  const edges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-  for(const[a,b]of edges){
-    const pa=proj(defs[a]),pb=proj(defs[b]);
-    if(pa&&pb)items.push({d:(pa[2]+pb[2])/2,draw:()=>{x.strokeStyle='#3b82f6';x.lineWidth=1.4;x.beginPath();x.moveTo(pa[0],pa[1]);x.lineTo(pb[0],pb[1]);x.stroke();}});
+  G.rb={red:red,black:black};
+  return G.rb;
+}
+function solvePoissonField(rhs,useFaces,maxIt,tol){
+  const p=new Float64Array(G.N);
+  const rb=rbLists();
+  for(let it=0;it<maxIt;it++){
+    for(const [i,j,k] of rb.red)gsPoisson(p,rhs,i,j,k,useFaces);
+    for(const [i,j,k] of rb.black)gsPoisson(p,rhs,i,j,k,useFaces);
+    let m=0,n=0;
+    for(let c=0;c<G.N;c++)if(!G.solid[c]){m+=p[c];n++;}
+    if(n>0){m/=n;for(let c=0;c<G.N;c++)if(!G.solid[c])p[c]-=m;}
+    if(it%100===99){
+      let rmax=0;
+      for(const [i,j,k] of rb.red){const rr=Math.abs(lapRes(p,rhs,i,j,k,useFaces));if(rr>rmax)rmax=rr;}
+      for(const [i,j,k] of rb.black){const rr=Math.abs(lapRes(p,rhs,i,j,k,useFaces));if(rr>rmax)rmax=rr;}
+      G.lastConv={stage:convStage,it:it+1,res:rmax};
+      if(rmax<tol)break;
+    }
   }
-  for(let gx=0;gx<=r.L+1e-6;gx+=0.5){
-    const a=proj([gx,0,0]),b=proj([gx,r.l,0]);
-    if(a&&b)items.push({d:(a[2]+b[2])/2,draw:()=>{x.strokeStyle='rgba(148,163,184,.18)';x.lineWidth=1;x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(b[0],b[1]);x.stroke();}});
+  return p;
+}
+function vFromPhi(phi){
+  const {nx,ny,nz}=G,res=G.res;
+  G.fx.fill(0);G.fy.fill(0);G.fz.fill(0);
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=1;i<nx;i++){
+    const a=idx(i-1,j,k),b=idx(i,j,k);
+    if(G.solid[a]||G.solid[b])continue;
+    G.fx[fxi(i,j,k)]=(phi[b]-phi[a])/res;
   }
-  for(let gy=0;gy<=r.l+1e-6;gy+=0.5){
-    const a=proj([0,gy,0]),b=proj([r.L,gy,0]);
-    if(a&&b)items.push({d:(a[2]+b[2])/2,draw:()=>{x.strokeStyle='rgba(148,163,184,.18)';x.lineWidth=1;x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(b[0],b[1]);x.stroke();}});
+  for(let k=0;k<nz;k++)for(let j=1;j<ny;j++)for(let i=0;i<nx;i++){
+    const a=idx(i,j-1,k),b=idx(i,j,k);
+    if(G.solid[a]||G.solid[b])continue;
+    G.fy[fyi(i,j,k)]=(phi[b]-phi[a])/res;
   }
-  const faces=[[[0,0,0],[r.L,0,0],[r.L,0,r.H],[0,0,r.H]],[[0,r.l,0],[r.L,r.l,0],[r.L,r.l,r.H],[0,r.l,r.H]],[[0,0,0],[0,r.l,0],[0,r.l,r.H],[0,0,r.H]],[[r.L,0,0],[r.L,r.l,0],[r.L,r.l,r.H],[r.L,0,r.H]],[[0,0,0],[r.L,0,0],[r.L,r.l,0],[0,r.l,0]],[[0,0,r.H],[r.L,0,r.H],[r.L,r.l,r.H],[0,r.l,r.H]]];
-  faces.forEach((fc,i)=>{
-    const ps=fc.map(proj);
-    if(ps.some(p=>!p))return;
-    const d=ps.reduce((s,p)=>s+p[2],0)/4;
-    items.push({d,draw:()=>{
-      x.fillStyle=i===5?'rgba(59,130,246,.10)':'rgba(59,130,246,.05)';
-      x.beginPath();x.moveTo(ps[0][0],ps[0][1]);for(let k=1;k<4;k++)x.lineTo(ps[k][0],ps[k][1]);x.closePath();x.fill();
-    }});
-  });
-  state.mobilier.forEach((m,i)=>{
-    const col=PALETTE[i%PALETTE.length];
-    const x1=m.x-m.L/2,x2=m.x+m.L/2,y1=m.y-m.l/2,y2=m.y+m.l/2,z1=m.z,z2=m.z+m.H;
-    const v=[[x1,y1,z1],[x2,y1,z1],[x2,y2,z1],[x1,y2,z1],[x1,y1,z2],[x2,y1,z2],[x2,y2,z2],[x1,y2,z2]];
-    const fcs=[[0,1,2,3],[4,5,6,7],[0,1,5,4],[2,3,7,6],[1,2,6,5],[0,3,7,4]];
-    fcs.forEach(fc=>{
-      const ps=fc.map(k=>proj(v[k]));
-      if(ps.some(p=>!p))return;
-      const d=ps.reduce((s,p)=>s+p[2],0)/4;
-      items.push({d,draw:()=>{
-        x.fillStyle=col+'cc';x.strokeStyle=col;x.lineWidth=1;
-        x.beginPath();x.moveTo(ps[0][0],ps[0][1]);for(let k=1;k<4;k++)x.lineTo(ps[k][0],ps[k][1]);x.closePath();x.fill();x.stroke();
-      }});
-    });
-  });
-  state.supplies.forEach(b=>{
-    const pos=posOf(b,r);
-    const p=proj(pos);
-    if(!p)return;
-    const sz=Math.min(b.dim||0.2,0.8);
-    const rad=Math.max(3,f*sz/(2*p[2]));
-    items.push({d:p[2],draw:()=>{
-      x.fillStyle='#34d399';x.strokeStyle='#065f46';x.lineWidth=1.5;
-      if(b.type==='rond'){x.beginPath();x.arc(p[0],p[1],rad,0,7);x.fill();x.stroke();}
-      else if(b.type==='carre'||b.type==='grille'){x.beginPath();x.rect(p[0]-rad,p[1]-rad,rad*2,rad*2);x.fill();x.stroke();}
-      else{
-        const ax=slotAxes(b),hl=Math.min(b.dim,Math.max(r.L,r.l))/2;
-        const q1=proj([pos[0]-ax.long[0]*hl,pos[1]-ax.long[1]*hl,pos[2]-ax.long[2]*hl]);
-        const q2=proj([pos[0]+ax.long[0]*hl,pos[1]+ax.long[1]*hl,pos[2]+ax.long[2]*hl]);
-        if(q1&&q2){x.save();x.strokeStyle='#34d399';x.lineWidth=Math.max(3,rad*0.7);x.lineCap='round';x.beginPath();x.moveTo(q1[0],q1[1]);x.lineTo(q2[0],q2[1]);x.stroke();x.restore();}
+  for(let k=1;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const a=idx(i,j,k-1),b=idx(i,j,k);
+    if(G.solid[a]||G.solid[b])continue;
+    G.fz[fzi(i,j,k)]=(phi[b]-phi[a])/res;
+  }
+}
+/* --- Jets analytiques : noyau puis loi 1/x (rond) ou 1/sqrt(x) (fente), profil gaussien conique --- */
+/* Effet Coanda : si le jet démarre à moins de 2 mailles d'une paroi et quasi parallèlement
+   à cette paroi (|d·n| < sin(20°)), il reste collé : direction projetée sur la paroi +
+   légère composante d'adhérence, jusqu'à ce que la vitesse tombe sous v0/2. */
+function addJets(){
+  const r=state.room,res=G.res,{nx,ny,nz}=G;
+  const nfx=G.fx.length,nfy=G.fy.length,nfz=G.fz.length;
+  for(const s of G.supplyCells){
+    const b=s.b,d0=dirOf(b,r),v0=v0Eff(b); /* v0 fabricant si renseignée, sinon calculée depuis Q */
+    const isSlot=b.type==='fente';
+    const dim=b.type==='rond'?b.dim:(isSlot?(b.dim2||0.02):b.dim);
+    const sCore=sCoreOf(b,v0),spread=0.10,step=res/2; /* noyau calibré sur la portée fabricant si renseignée */
+    const maxS=Math.sqrt(r.L*r.L+r.l*r.l+r.H*r.H)+2*res;
+    // Détection paroi Coanda
+    const p0=s.p;
+    const walls=[
+      {n:[ 1,0,0],dist:p0[0]},{n:[-1,0,0],dist:r.L-p0[0]},
+      {n:[0, 1,0],dist:p0[1]},{n:[0,-1,0],dist:r.l-p0[1]},
+      {n:[0,0, 1],dist:p0[2]},{n:[0,0,-1],dist:r.H-p0[2]}
+    ];
+    let coanda=null;
+    for(const w of walls){
+      if(w.dist<2*res && Math.abs(d0[0]*w.n[0]+d0[1]*w.n[1]+d0[2]*w.n[2])<0.34){
+        coanda={n:w.n,until:v0/2};break;
       }
-    }});
-    const dv=dirOf(b,r);
-    const pe=proj([pos[0]+dv[0]*0.35,pos[1]+dv[1]*0.35,pos[2]+dv[2]*0.35]);
-    if(pe)items.push({d:(p[2]+pe[2])/2,draw:()=>{x.strokeStyle='rgba(209,250,229,.8)';x.lineWidth=1.5;x.beginPath();x.moveTo(p[0],p[1]);x.lineTo(pe[0],pe[1]);x.stroke();}});
-  });
-  state.extracts.forEach(e=>{
-    const p=proj(posOf(e,r));
-    if(!p)return;
-    items.push({d:p[2],draw:()=>{
-      const s=Math.max(4,f*0.06/p[2]);
-      x.strokeStyle='#f87171';x.lineWidth=2.5;
-      x.beginPath();x.moveTo(p[0]-s,p[1]-s);x.lineTo(p[0]+s,p[1]+s);x.moveTo(p[0]+s,p[1]-s);x.lineTo(p[0]-s,p[1]+s);x.stroke();
-    }});
-  });
-  if(sim&&sim.streams){
-    for(const st of sim.streams){
-      const ps=st.map(q=>proj(q));
-      if(ps.filter(Boolean).length<2)continue;
-      let d=0,n=0;
-      ps.forEach(p=>{if(p){d+=p[2];n++;}});
-      items.push({d:d/Math.max(1,n),draw:()=>{
-        for(let k=1;k<ps.length;k++){
-          if(!ps[k]||!ps[k-1])continue;
-          x.strokeStyle=speedColor(st[k][3]);x.globalAlpha=0.85;x.lineWidth=1.6;
-          x.beginPath();x.moveTo(ps[k-1][0],ps[k-1][1]);x.lineTo(ps[k][0],ps[k][1]);x.stroke();x.globalAlpha=1;
+    }
+    let d=d0.slice();
+    if(coanda){
+      // projeter d sur le plan de la paroi
+      const dn=d[0]*coanda.n[0]+d[1]*coanda.n[1]+d[2]*coanda.n[2];
+      d=[d[0]-dn*coanda.n[0],d[1]-dn*coanda.n[1],d[2]-dn*coanda.n[2]];
+      const dl=Math.hypot(d[0],d[1],d[2])||1;
+      d=[d[0]/dl,d[1]/dl,d[2]/dl];
+      // légère composante vers la paroi (adhérence)
+      d=[d[0]-0.06*coanda.n[0],d[1]-0.06*coanda.n[1],d[2]-0.06*coanda.n[2]];
+      const dl2=Math.hypot(d[0],d[1],d[2])||1;
+      d=[d[0]/dl2,d[1]/dl2,d[2]/dl2];
+    }
+    const bwX=new Float64Array(nfx).fill(-1),bvX=new Float64Array(nfx);
+    const bwY=new Float64Array(nfy).fill(-1),bvY=new Float64Array(nfy);
+    const bwZ=new Float64Array(nfz).fill(-1),bvZ=new Float64Array(nfz);
+    // Points de départ du jet répartis le long de l'axe long de l'ouverture :
+    // chaque point émet dans la direction (inclinée) -> toute la fente est inclinée, pas que le centre.
+    const ax=slotAxes(b);
+    const halfL=b.dim/2;
+    const nStart=Math.max(1,Math.min(16,Math.round(b.dim/Math.max(res,0.05))));
+    for(let ns=0;ns<nStart;ns++){
+      const t=nStart===1?0:((ns/(nStart-1))*2-1)*halfL;
+      const p0=[s.p[0]+ax.long[0]*t,s.p[1]+ax.long[1]*t,s.p[2]+ax.long[2]*t];
+      for(let sd=step;sd<maxS;sd+=step){
+      const x=p0[0]+d[0]*sd,y=p0[1]+d[1]*sd,z=p0[2]+d[2]*sd;
+      if(x<0||y<0||z<0||x>r.L||y>r.l||z>r.H)break;
+      const vc=sd<=sCore?v0:(isSlot?v0*Math.sqrt(sCore/sd):v0*sCore/sd);
+      if(coanda&&vc<coanda.until)coanda=null; // le jet se détache
+      const rad=Math.max(dim/2,0.02)+sd*spread;
+      const i0=Math.max(1,Math.floor((x-rad)/res)),i1=Math.min(nx-1,Math.ceil((x+rad)/res));
+      const j0=Math.max(0,Math.floor((y-rad)/res)),j1=Math.min(ny-1,Math.ceil((y+rad)/res));
+      const k0=Math.max(0,Math.floor((z-rad)/res)),k1=Math.min(nz-1,Math.ceil((z+rad)/res));
+      for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
+        for(const fi of [i,i+1]){
+          if(fi<1||fi>nx-1)continue;
+          const a=idx(fi-1,j,k),b2=idx(fi,j,k);
+          if(G.solid[a]||G.solid[b2])continue;
+          const dd=(fi*res-x)**2+((j+0.5)*res-y)**2+((k+0.5)*res-z)**2;
+          if(dd>rad*rad)continue;
+          const w=Math.exp(-dd/(rad*rad)),q=fxi(fi,j,k);
+          if(w>bwX[q]){bwX[q]=w;bvX[q]=vc*d[0];}
         }
-      }});
+        for(const fj of [j,j+1]){
+          if(fj<1||fj>ny-1)continue;
+          const a=idx(i,fj-1,k),b2=idx(i,fj,k);
+          if(G.solid[a]||G.solid[b2])continue;
+          const dd=((i+0.5)*res-x)**2+(fj*res-y)**2+((k+0.5)*res-z)**2;
+          if(dd>rad*rad)continue;
+          const w=Math.exp(-dd/(rad*rad)),q=fyi(i,fj,k);
+          if(w>bwY[q]){bwY[q]=w;bvY[q]=vc*d[1];}
+        }
+        for(const fk of [k,k+1]){
+          if(fk<1||fk>nz-1)continue;
+          const a=idx(i,j,fk-1),b2=idx(i,j,fk);
+          if(G.solid[a]||G.solid[b2])continue;
+          const dd=((i+0.5)*res-x)**2+((j+0.5)*res-y)**2+(fk*res-z)**2;
+          if(dd>rad*rad)continue;
+          const w=Math.exp(-dd/(rad*rad)),q=fzi(i,j,fk);
+          if(w>bwZ[q]){bwZ[q]=w;bvZ[q]=vc*d[2];}
+        }
+      }
+    }
+    }
+    for(let f=0;f<nfx;f++)if(bwX[f]>0)G.fx[f]+=bvX[f];
+    for(let f=0;f<nfy;f++)if(bwY[f]>0)G.fy[f]+=bvY[f];
+    for(let f=0;f<nfz;f++)if(bwZ[f]>0)G.fz[f]+=bvZ[f];
+  }
+}
+function divOfFaces(){
+  const {nx,ny,nz}=G,res=G.res;
+  const dv=new Float64Array(G.N);
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const c=idx(i,j,k);if(G.solid[c])continue;
+    dv[c]=((G.fx[fxi(i+1,j,k)]-G.fx[fxi(i,j,k)])+(G.fy[fyi(i,j+1,k)]-G.fy[fyi(i,j,k)])+(G.fz[fzi(i,j,k+1)]-G.fz[fzi(i,j,k)]))/res;
+  }
+  return dv;
+}
+/* --- Projection de Helmholtz : v <- v - grad(p), laplacien(p)=div(v)-S, v.n=0 aux parois --- */
+function project(maxIt,tol){
+  const {nx,ny,nz}=G,res=G.res;
+  const dv=divOfFaces();
+  const rhs=new Float64Array(G.N);
+  for(let c=0;c<G.N;c++)rhs[c]=dv[c]-G.S[c];
+  const p=solvePoissonField(rhs,true,maxIt,tol);
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=1;i<nx;i++){
+    const a=idx(i-1,j,k),b=idx(i,j,k);
+    if(G.solid[a]||G.solid[b]){G.fx[fxi(i,j,k)]=0;continue;}
+    G.fx[fxi(i,j,k)]-=(p[b]-p[a])/res;
+  }
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++){G.fx[fxi(0,j,k)]=0;G.fx[fxi(nx,j,k)]=0;}
+  for(let k=0;k<nz;k++)for(let j=1;j<ny;j++)for(let i=0;i<nx;i++){
+    const a=idx(i,j-1,k),b=idx(i,j,k);
+    if(G.solid[a]||G.solid[b]){G.fy[fyi(i,j,k)]=0;continue;}
+    G.fy[fyi(i,j,k)]-=(p[b]-p[a])/res;
+  }
+  for(let k=0;k<nz;k++)for(let i=0;i<nx;i++){G.fy[fyi(i,0,k)]=0;G.fy[fyi(i,ny,k)]=0;}
+  for(let k=1;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const a=idx(i,j,k-1),b=idx(i,j,k);
+    if(G.solid[a]||G.solid[b]){G.fz[fzi(i,j,k)]=0;continue;}
+    G.fz[fzi(i,j,k)]-=(p[b]-p[a])/res;
+  }
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){G.fz[fzi(i,j,0)]=0;G.fz[fzi(i,j,nz)]=0;}
+}
+function cellVel(){
+  const {nx,ny,nz}=G;
+  G.vc=new Float64Array(G.N*3);
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const c=idx(i,j,k);if(G.solid[c])continue;
+    G.vc[3*c]=0.5*(G.fx[fxi(i,j,k)]+G.fx[fxi(i+1,j,k)]);
+    G.vc[3*c+1]=0.5*(G.fy[fyi(i,j,k)]+G.fy[fyi(i,j+1,k)]);
+    G.vc[3*c+2]=0.5*(G.fz[fzi(i,j,k)]+G.fz[fzi(i,j,k+1)]);
+  }
+}
+function distParoi(){
+  const {nx,ny,nz}=G,res=G.res,r=state.room;
+  const d=new Float64Array(G.N);
+  const q=[];
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const c=idx(i,j,k);
+    const x=(i+0.5)*res,y=(j+0.5)*res,z=(k+0.5)*res;
+    if(G.solid[c]){d[c]=0;q.push(c);}
+    else d[c]=Math.min(x,r.L-x,y,r.l-y,z,r.H-z);
+  }
+  const inq=new Uint8Array(G.N);
+  for(const c of q)inq[c]=1;
+  let head=0;
+  while(head<q.length){
+    const c=q[head++];
+    const i=c%nx,j=Math.floor(c/nx)%ny,k=Math.floor(c/(nx*ny));
+    const nbs=[[i-1,j,k],[i+1,j,k],[i,j-1,k],[i,j+1,k],[i,j,k-1],[i,j,k+1]];
+    for(const [a,b,cc] of nbs){
+      if(a<0||b<0||cc<0||a>=nx||b>=ny||cc>=nz)continue;
+      const n=idx(a,b,cc),nd=d[c]+res;
+      if(nd<d[n]){d[n]=nd;if(!inq[n]){inq[n]=1;q.push(n);}}
     }
   }
-  if(sim&&sim.parts.length){
-    const useAge=sim.done;
-    for(const p of sim.parts){
-      const q=proj([p.x,p.y,p.z]);
-      if(!q)continue;
-      items.push({d:q[2],draw:()=>{
-        const sp=Math.sqrt(p.vx*p.vx+p.vy*p.vy+p.vz*p.vz);
-        x.fillStyle=useAge?ageColor(p.age,sim.tauN):speedColor(sp);
-        const rad=clamp(f*0.018/q[2],0.6,3.5);
-        x.beginPath();x.arc(q[0],q[1],rad,0,7);x.fill();
-      }});
-    }
-  }
-  items.sort((a,b)=>b.d-a.d);
-  for(const it of items)it.draw();
-  const bx=80,by=h-80;
-  const axes=[[1,0,0,'X','#f87171'],[0,1,0,'Y','#34d399'],[0,0,1,'Z (haut)','#60a5fa']];
-  for(const[axx,ayy,azz,lbl,col]of axes){
-    const p0=proj(B.t),p1=proj([B.t[0]+axx*1.2,B.t[1]+ayy*1.2,B.t[2]+azz*1.2]);
-    if(!p0||!p1)continue;
-    let dx=p1[0]-p0[0],dy=p1[1]-p0[1];const dl=Math.hypot(dx,dy)||1;dx/=dl;dy/=dl;
-    x.strokeStyle=col;x.fillStyle=col;x.lineWidth=2;
-    x.beginPath();x.moveTo(bx,by);x.lineTo(bx+dx*38,by+dy*38);x.stroke();
-    x.beginPath();x.arc(bx+dx*38,by+dy*38,3.5,0,7);x.fill();
-    x.font='11px sans-serif';x.fillText(lbl,bx+dx*46-12,by+dy*46+4);
-  }
-  x.fillStyle='#9fb0c3';x.font='11px sans-serif';
-  const legend=sim&&sim.done?'particules colorées par âge de l\'air (bleu = neuf, rouge = vieux) + lignes de courant — rotation autour de l\'axe vertical uniquement, molette = zoom':'bouches vertes = soufflage, croix rouges = reprise — rotation autour de l\'axe vertical uniquement — lancez la simulation';
-  x.fillText(legend,10,h-10);
+  G.dist=d;
 }
-(function initControls(){
-  const c=$('#view3d');
-  let drag=false,lx=0,ly=0;
-  c.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;c.setPointerCapture(e.pointerId);});
-  window.addEventListener('pointerup',()=>drag=false);
-  window.addEventListener('pointermove',e=>{
-    if(!drag)return;
-    view.theta+=(e.clientX-lx)*0.008;
-    lx=e.clientX;ly=e.clientY;
-    if(!sim||!sim.running)render3D();
-  });
-  c.addEventListener('wheel',e=>{
-    e.preventDefault();
-    view.dist=clamp(view.dist*(1+Math.sign(e.deltaY)*0.08),4,40);
-    if(!sim||!sim.running)render3D();
-  },{passive:false});
-  window.addEventListener('resize',()=>{render3D();drawHeatmap();});
-})();
-(function initDragPlan(){
-  const hm=$('#heatmap');
-  let drag=null;
-  function toCanvas(e){const rc=hm.getBoundingClientRect();return[(e.clientX-rc.left)*hm.width/rc.width,(e.clientY-rc.top)*hm.height/rc.height];}
-  function hitAt(mx,my){const hits=window.__hits||[];for(let k=hits.length-1;k>=0;k--){const h=hits[k];if(h.r?Math.hypot(mx-h.x,my-h.y)<=h.r:(mx>=h.x&&mx<=h.x+h.w&&my>=h.y&&my<=h.y+h.h))return h;}return null;}
-  hm.addEventListener('pointerdown',e=>{
-    if(sim&&sim.running)return;
-    const c=toCanvas(e);const h=hitAt(c[0],c[1]);
-    if(h){drag=h;hm.style.cursor='grabbing';e.preventDefault();hm.setPointerCapture(e.pointerId);}
-  });
-  window.addEventListener('pointermove',e=>{
-    const c=toCanvas(e);
-    if(!drag){hm.style.cursor=hitAt(c[0],c[1])?'grab':'';return;}
-    const g=window.__hm;if(!g)return;
-    const rr=state.room;
-    const rx=clamp((c[0]-g.ox)/g.sc,0,rr.L),ry=clamp(rr.l-(c[1]-g.oy)/g.sc,0,rr.l);
-    if(drag.k==='s'){const b=state.supplies[drag.i];b.x=rx;b.y=ry;}
-    else if(drag.k==='e'){const el=state.extracts[drag.i];el.x=rx;el.y=ry;}
-    else{const m=state.mobilier[drag.i];m.x=rx;m.y=ry;}
-    refreshViews();
-  });
-  window.addEventListener('pointerup',()=>{
-    if(drag){drag=null;hm.style.cursor='';renderSupplies();renderExtracts();renderMobilier();}
-  });
-})();
-function genererRapport(){
-  if(!sim||!sim.results)return;
-  const r=state.room,s=sim,R=sim.results;
-  const imgHM=$('#heatmap').toDataURL('image/png');
-  const img3D=$('#view3d').toDataURL('image/png');
-  const date=new Date().toLocaleString('fr-FR');
-  const rowsS=state.supplies.map((b,i)=>{
-    const dim=b.type==='rond'?`Ø ${fmt(b.dim*1000,0)} mm`:b.type==='fente'?`fente ${fmt(b.dim,2)} m × ${fmt((b.dim2||0.02)*1000,0)} mm (rotation ${fmt(b.ori||0,0)}°)`:`côté ${fmt(b.dim*1000,0)} mm`;
-    const pos=posOf(b,state.room);
-    const dirTxt=(!b.montage||b.montage==='plafond')?DIR_LABEL[b.dir]+' (az. '+fmt(b.azi||0,0)+'°)':'horizontale vers l\'intérieur';
-    return`<tr><td>${i+1}</td><td>${TYPE_LABEL[b.type]}</td><td>${dim}</td><td>${MONT_LABEL[b.montage||'plafond']}</td><td>${fmt(pos[0],2)} ; ${fmt(pos[1],2)} ; z=${fmt(pos[2],2)}</td><td>${fmt(b.q,0)} m³/h</td><td>${dirTxt}</td><td>${fmt(v0Of(b),1)} m/s</td></tr>`;
-  }).join('');
-  const rowsE=state.extracts.map((e,i)=>{
-    const dimE=e.type==='rond'?`Ø ${fmt((e.dim||0.4)*1000,0)} mm`:e.type==='fente'?`fente ${fmt(e.dim,2)} m × ${fmt((e.dim2||0.02)*1000,0)} mm`:`côté ${fmt((e.dim||0.4)*1000,0)} mm`;
-    const pos=posOf(e,state.room);
-    return`<tr><td>${i+1}</td><td>${TYPE_LABEL[e.type||'grille']}</td><td>${dimE}</td><td>${MONT_LABEL[e.montage||'plafond']}</td><td>${fmt(pos[0],2)} ; ${fmt(pos[1],2)} ; z=${fmt(pos[2],2)}</td><td>${e.q?fmt(e.q,0)+' m³/h':'auto ('+fmt(s.Qsup/state.extracts.length,0)+' m³/h)'}</td></tr>`;
-  }).join('');
-  const rowsM=state.mobilier.map((m,i)=>`<tr><td>${esc(m.nom)}</td><td>${fmt(m.x,2)} ; ${fmt(m.y,2)} ; z=${fmt(m.z,2)}</td><td>${fmt(m.L,2)} × ${fmt(m.l,2)} × ${fmt(m.H,2)} m</td></tr>`).join('');
-  const doc=`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport de balayage de ventilation</title>
-<style>
-body{font-family:"Segoe UI",Arial,sans-serif;color:#111;margin:32px;font-size:13px}
-h1{font-size:20px;color:#0b3b5c;border-bottom:3px solid #0b3b5c;padding-bottom:6px}
-h2{font-size:15px;color:#0f5e46;margin-top:26px;border-bottom:1px solid #ccc;padding-bottom:3px}
-table{border-collapse:collapse;width:100%;margin-top:8px}
-th,td{border:1px solid #bbb;padding:5px 8px;text-align:left;font-size:12px}
-th{background:#e8f0f7}
-.meta{color:#555;font-size:12px}
-.stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
-.stat{border:1px solid #bbb;border-radius:8px;padding:8px 12px;min-width:140px;background:#f8fafc}
-.stat b{display:block;font-size:17px;color:#0f5e46}
-.stat span{font-size:11px;color:#555}
-img{max-width:100%;border:1px solid #bbb;border-radius:6px;margin-top:8px}
-.warn{background:#fef3c7;border:1px solid #f59e0b;padding:8px 12px;border-radius:6px}
-.note{background:#f1f5f9;border-left:4px solid #0b3b5c;padding:8px 12px;font-size:12px}
-@media print{body{margin:10px}}
-</style></head><body>
-<h1>Rapport de simulation de balayage de ventilation</h1>
-<p class="meta">Édité le ${date} — généré par le simulateur autonome (fichier HTML unique).</p>
-<h2>1. Pièce et conditions</h2>
-<table><tr><th>Longueur</th><th>Largeur</th><th>Hauteur</th><th>Volume</th><th>T° ambiante</th><th>T° de soufflage</th></tr>
-<tr><td>${fmt(r.L,2)} m</td><td>${fmt(r.l,2)} m</td><td>${fmt(r.H,2)} m</td><td>${fmt(s.V,1)} m³</td><td>${fmt(r.Tamb,1)} °C</td><td>${fmt(r.Tsouf,1)} °C</td></tr></table>
-<h2>2. Bouches de soufflage (insufflation)</h2>
-<table><tr><th>#</th><th>Forme</th><th>Dimensions</th><th>Montage</th><th>Position X;Y;Z (m)</th><th>Débit</th><th>Direction</th><th>Vitesse de soufflage</th></tr>${rowsS}</table>
-<h2>3. Reprises d'air (extraction)</h2>
-<table><tr><th>#</th><th>Forme</th><th>Dimensions</th><th>Montage</th><th>Position X;Y;Z (m)</th><th>Débit</th></tr>${rowsE}</table>
-${s.reequilibre?'<p class="warn">⚠ La somme des débits d\'extraction ne correspondait pas au débit d\'insufflation : les débits ont été rééquilibrés automatiquement.</p>':''}
-<h2>4. Mobilier et obstacles</h2>
-${state.mobilier.length?`<table><tr><th>Élément</th><th>Position X;Y;Z base (m)</th><th>Dimensions L × l × H</th></tr>${rowsM}</table>`:'<p>Aucun mobilier renseigné.</p>'}
-<h2>5. Paramètres et résultats de la simulation</h2>
-<table><tr><th>Durée simulée</th><th>Nombre de particules</th><th>Débit total</th><th>τ nominal (V/Q)</th><th>ACH</th><th>Air renouvelé après la durée simulée</th></tr>
-<tr><td>${fmt(s.T,0)} s${state.sim.autoDuree?' (auto ≈ 4 × τ nom., max 1 h)':''}</td><td>${s.N}</td><td>${fmt(s.Qsup,0)} m³/h</td><td>${fmt(s.tauN/60,1)} min</td><td>${fmt(R.ach,1)} h⁻¹</td><td>${fmt(R.renouv,1)} % (simulé ; ${fmt(R.renouvTheo,1)} % en théorie de mélange parfait)</td></tr></table>
-<div class="stats">
-<div class="stat"><b>${fmt(R.effMoy,1)} %</b><span>taux de balayage moyen (pondéré par le volume)</span></div>
-<div class="stat"><b>${fmt(R.pctVol100,1)} %</b><span>du volume balayé à ≥ 100 %</span></div>
-<div class="stat"><b>${fmt(R.ageMoy/60,1)} min</b><span>âge moyen local de l'air (volume balayé)</span></div>
-<div class="stat"><b>${fmt(R.resMoy/60,1)} min</b><span>temps de résidence moyen des particules extraites</span></div>
-<div class="stat"><b>${fmt(R.resOK,1)} %</b><span>des particules extraites en moins d'un τ nominal</span></div>
-<div class="stat"><b>${fmt(100*s.resTimes.length/s.N,1)} %</b><span>des particules extraites avant ${fmt(s.T,0)} s</span></div>
-</div>
-${s.resTimes.length/s.N<0.9?'<p class="warn">⚠ Seulement '+fmt(100*s.resTimes.length/s.N,0)+' % des particules ont atteint une extraction avant la fin de la durée simulée : la durée était courte devant les temps de résidence observés, la heat map est indicielle. Relancez avec la durée automatique (≈ 4 × τ nominal, max 1 h) pour viser l\'état permanent.</p>':''}
-<h2>6. Heat map du taux de balayage (tranche z = ${fmt(state.sim.tranche,1)} m)</h2>
-<p class="meta">Taux de balayage local = τ nominal / âge moyen local de l'air × 100 %. Bleu = faible balayage / air âgé, rouge = balayage élevé. Gris = zone non balayée.</p>
-<img src="${imgHM}" alt="Heat map du taux de balayage">
-<h2>7. Vue 3D du flux d'air</h2>
-<img src="${img3D}" alt="Vue 3D du flux d'air">
-<h2>8. Méthodologie et limites</h2>
-<p class="note">Modèle lagrangien simplifié : ${s.N} particules d'air émises à t = 0 aux bouches d'insufflation (pas de temps adaptatif 0,05–0,12 s) et suivies jusqu'à l'extraction. Les jets sont modélisés avec entraînement (décroissance de vitesse selon la distance), une diffusion turbulente, la flottabilité lorsque la température de soufflage diffère de l'ambiante, des rebonds sur les parois et les obstacles, une aspiration aux bouches d'extraction selon un écoulement de puits (v ∝ q/d² vers chaque reprise, proportionnelle à son débit : prédominante près de la bouche, quasi nulle aux coins — le trajet court soufflage→reprise est privilégié). L'âge de chaque particule est cumulé dans une grille volumique (~0,25 m) sur toute sa trajectoire (estimation de l'état permanent) ; l'âge moyen par cellule en déduit le taux de balayage local. Durée simulée : ${fmt(s.T,0)} s${state.sim.autoDuree?' (automatique, ≈ 4 × τ nominal, max 1 h)':''}.<br><br>
-<b>Attention :</b> ce rapport est un outil d'aide au dimensionnement et à la comparaison de configurations. Il ne se substitue pas à une étude CFD réglementaire ni aux exigences des normes et référentiels applicables (RE2020, NF EN 16798, etc.).</p>
-</body></html>`;
-  $('#repFrame').srcdoc=doc;
-  $('#overlay').hidden=false;
-}
-function fermerRapport(){$('#overlay').hidden=true;}
-function imprimerRapport(){const f=$('#repFrame');f.contentWindow.focus();f.contentWindow.print();}
-function telechargerRapport(){
-  const blob=new Blob([$('#repFrame').srcdoc],{type:'text/html;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='rapport-balayage-ventilation.html';
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
-}
-renderPiece();renderSupplies();renderExtracts();renderMobilier();renderSimParams();
-$('#lblTranche').textContent=fmt(state.sim.tranche,1);
-drawHeatmap();render3D();updateStats();
-</script>
-</body>
-</html>
+function computeNuT(){
+  G.nuT=new Float64Array(G.N);
+  const s=state.sim;
+  for(let c=0;c<G.N;c++){
+    if(G.solid[c])continue;
+    const v=Math.hypot(G.vc[3*c],G.vc[3*c+1],G.vc[3*c+2]);

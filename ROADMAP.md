@@ -1,7 +1,7 @@
 # ROADMAP — Simulateur de balayage de ventilation
 
 Projet : `Xianos51/Simulation-balayage-ventilation-` (GitHub, public)
-Dernière mise à jour : 2026-11-22
+Dernière mise à jour : 2026-11-26
 
 ---
 
@@ -183,7 +183,45 @@ ordonnancement red-black pour diviser le temps de calcul par ~2.
   turbulence (k-ε simplifié ou LES) sur grille MAC, en **WebGPU (compute shaders)** ou WASM
   multithread — pour les recirculations fines, sillages d'obstacles, stratifications complexes.
 - Validation CFD : cavité entraînée (benchmark de Ghia), jet libre, canal plan.
+- **Visualisation dynamique du flux d'air en temps réel** : animer la simulation transitoire
+  (particules / lignes de courant advectées pas à pas avec dt CFL, rendu WebGL) pour *voir*
+  le flux se déplacer dans la pièce en direct, avec lecture/pause/vitesse — au-delà du régime
+  permanent actuel. C'est la demande utilisateur prioritaire côté « vivant ».
 - Optionnel (hors contrainte PC pro) : solveur côté serveur / CLI headless pour campagnes longues.
+
+## 6bis. Phase 4 (terminée le 2026-11-26 — livrée dans `index.html`, poussée sur la branche par défaut)
+
+Demandes utilisateur du 2026-11-26, toutes livrées :
+
+- **Multi-pièces** : une étude = plusieurs pièces (`study.pieces[]`), sélecteur + ajout / renommage /
+  suppression en section 0 ; « Résoudre toutes les pièces » enchaîne les résolutions (résultats
+  conservés par pièce, pastille ✓) ; le rapport récapitule les métriques de toutes les pièces résolues.
+- **Pièces non rectangulaires** : plan = polygone (`room.poly`, rectangle par défaut) ; cellules hors
+  polygone = solides (murs), volume = aire du polygone × H, Coanda et parois détectés sur les bords
+  du polygone. **Édition du plan et des côtes directement sur la vue en plan** : mode « ✏️ Éditer le
+  plan » — glisser un sommet, glisser un milieu de bord pour insérer un sommet, double-clic sur un
+  sommet (saisir x,y) ou sur une cote (saisir la longueur du bord).
+- **Rendu GPU** : la heat map est rendue en **WebGL** (texture de la tranche + colormap dans le
+  fragment shader), calque 2D transparent par-dessus pour le plan, les bouches (avec débits) et la
+  légende ; repli automatique en canvas 2D (CPU) si WebGL indisponible. Export PNG = composition des
+  deux canvases.
+- **Bouches sur murs / cloisons** : montage « Bord k » (n'importe quel bord du polygone) et
+  « Cloison / meuble » (élément + face ±x/±y) — ex. bouche de soufflage sur une cloison.
+- **Rapport** : **vue 3D isométrique** (vraie projection iso) + **heat maps toutes les 0,5 m**
+  (plus la tranche courante) + récap multi-pièces.
+- **Export / import de l'étude avec les calculs déjà faits** : le JSON exporté contient toutes les
+  pièces + leurs champs 3D (sérialisés), métriques, convergence ; le réimport restaure heat maps et
+  vue 3D sans recalcul. (localStorage et URL ne gardent que la config, pour rester légers.)
+- **Couleurs inversées, globalement** : bleu = froid / petit / faible, **rouge = chaud / grand / élevé**
+  sur toutes les grandeurs (balayage, âge, température, vitesse) — colormap identique en CPU et GPU.
+- **Débits des bouches affichés sur la vue en plan** (m³/h à côté de chaque S/R).
+- Compatibilité ascendante : anciens scénarios / URLs / localStorage (montages `murX0…`,
+  fenêtres `mur`, mono-pièce) normalisés automatiquement vers bords du rectangle / pièce unique.
+- Tests headless (2026-11-26) : syntaxe moteur + worker OK ; `pointInPoly` / aires / normales de
+  bords OK ; normalisation legacy OK ; `posOf`/`dirOf` bord et cloison OK ; sérialisation run OK ;
+  solveur complet exécuté hors worker sur pièce rectangulaire (τN = 1248 s, résidu ∇·v = 4,9e-8,
+  conforme au cas de référence ROADMAP) et sur pièce en L avec fenêtre, fente sur bord et reprise sur
+  cloison (V = 46,8 m³, résidu 5,8e-8, volume connecté) — conservation de la masse OK dans les deux cas.
 
 ## 7. Journal des décisions
 
@@ -203,10 +241,13 @@ ordonnancement red-black pour diviser le temps de calcul par ~2.
 | 2026-11-22 | **P2.7 livrée en local** : fenêtres sur les parois + température extérieure (Robin U·Text, infiltration = air neuf à Text rééquilibrée sur les reprises, τN = V/(Q+Qinf), déperditions depWin/depInf) + v0/portée fabricant par bouche (calibrage du noyau du jet à vTerm) | demande utilisateur « avant la prochaine phase » : thermique réaliste avec l’extérieur et jets fidèles aux données fabricant ; non-régression res 0,25 validée (voir P2.7), écart ERE expliqué par la correction T=Tsouf aux soufflages |
 | 2026-11-22 | **Bug fix** : le sélecteur « Grandeur affichée » (section 7) ne changeait jamais la heat map — `updSim` ne retenait que les valeurs numériques (`parseFloat('vit')` = NaN → affectation sautée, grandeur restait « balayage ») | remontée utilisateur : la heat map affichait toujours le balayage en vitesse/température ; corrigé (affectation directe pour `grandeur`), vérifié headless : grandeur = vit/temp/age OK et `grandeurVal` retourne bien la bonne grandeur |
 | 2026-11-22 | **Bug fix affichage température** : l'échelle de couleurs « temp » allait de Text à max(Tsouf,Tamb)+1 → avec Text = 5 °C, toute la plage utile (17–22 °C) était écrasée en bleu uniforme. Corrigé : échelle = min/max réellement résolus du champ (`tempScale()`, cachée par run). Ajouts UX : **tooltip au survol** de la heat map (valeur exacte par cellule x,y,z) et **bandeau ⚠ « configuration modifiée depuis la dernière résolution »** quand on édite la config après un run (18 saisies + updSim marquées) | remontée utilisateur : heat map température « uniformément 17 °C » alors que soufflage à 22 °C ; cause = échelle élargie par Text + run non relancé après changement de Tsouf ; vérifié headless : échelle 18,8–22,2, 24 couleurs distinctes sur un dégradé 19→22 °C, ⚠ déclenché par updRoom mais pas par grandeur/tranche |
+| 2026-11-26 | **Push GitHub** : le code local (source de vérité) est poussé directement sur la branche par défaut `vibe/sim-balayage-html-d11000` (les PR avec conflits sont fermées) — la branche `main` ne sert plus | la PR #4 (main → branche par défaut) présentait des conflits ; push direct sur la branche par défaut = zéro conflit, Pages continue de servir la branche par défaut |
+| 2026-11-26 | **Phase 4 livrée** : multi-pièces, pièces en polygone + édition du plan/côtes sur la vue, rendu heat map en WebGL (repli CPU), bouches sur bords du polygone et sur cloisons, rapport avec vue 3D isométrique + tranches toutes les 0,5 m + récap multi-pièces, export/import de l'étude AVEC calculs, couleurs inversées (rouge = chaud/grand, bleu = froid/petit), débits des bouches sur le plan | demande utilisateur du 2026-11-26 (voir §6bis) ; tests headless : non-régression cas ROADMAP (τN = 1248 s, résidu 4,9e-8) + cas pièce en L (résidu 5,8e-8) |
 
 ## 8. Questions ouvertes
 - Rayonnement des parois et apports internes (occupants, bureautique) : phase 3 ?
-- Couplage multi-pièces par portes : modèle de débit d'échange (ΔP) — phase 3.
+- Couplage multi-pièces par portes : modèle de débit d'échange (ΔP) entre pièces — phase 3 (aujourd'hui les pièces sont indépendantes).
 - Normes cibles pour les métriques : NF EN 16798-1 (âge de l'air, ERE), ASHRAE 62.1, RE2020.
 - Infiltration des fenêtres : actuellement débit imposé (m³/h) réparti uniformément ; piste = perméabilité
   (m³/h.m² sous 4 Pa, ex. NF EN 12207) convertie en débit selon un ΔP supposé, ou couplage pression (phase 3).
+- **Visualisation temps réel du flux d'air** (demande utilisateur) : simulation transitoire animée en WebGL — voir phase 3.

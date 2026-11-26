@@ -81,11 +81,11 @@ input[type=range]{padding:0}
     <h2>2. Fenêtres sur les parois</h2>
     <div id="fenetres"></div>
     <div class="btnline"><button class="mini" onclick="addWindow()">+ Ajouter une fenêtre</button></div>
-    <p class="note">Fenêtre = rectangle sur un mur vertical (x=0, x=L, y=0, y=l) : « pos » = position le long du mur (m), « allège z » = hauteur du bas de la fenêtre, puis largeur × hauteur (m). Chaque fenêtre échange thermiquement avec l'extérieur à la <b>température extérieure</b> renseignée en section 1 (U en W/m²K) et peut laisser passer une <b>infiltration d'air</b> (m³/h, traitée comme de l'air neuf à T extérieure, rééquilibrée sur les reprises). Déplaçables à la souris sur la vue de dessus (traits ambrés « F1… »).</p>
+    <p class="note">Fenêtre = rectangle sur un <b>bord du plan</b> (pièce rectangulaire ou non) : « pos » = position le long du bord (m), « allège z » = hauteur du bas de la fenêtre, puis largeur × hauteur (m). Chaque fenêtre échange thermiquement avec l'extérieur à la <b>température extérieure</b> renseignée en section 1 (U en W/m²K) et peut laisser passer une <b>infiltration d'air</b> (m³/h, traitée comme de l'air neuf à T extérieure, rééquilibrée sur les reprises). Déplaçables à la souris sur la vue de dessus (traits ambrés « F1… »).</p>
     <h2>3. Bouches de soufflage (insufflation)</h2>
     <div id="soufflage"></div>
     <div class="btnline"><button class="mini" onclick="addSupply()">+ Ajouter une bouche de soufflage</button></div>
-    <p class="note">Plafond : X, Y = position (Z ignoré), direction réglable. Mur (x=0, x=L, y=0, y=l) : la coordonnée du mur est fixée, Z = hauteur sur le mur, soufflage horizontal vers l'intérieur. « Rotation (°) » oriente la bouche autour de son axe (essentiel pour les fentes). <b>v0 fab.</b> (m/s) et <b>portée fab.</b> (m, throw à vTerm) sont les données fabricant : si renseignées, le jet analytique est calibré dessus ; sinon v0 est calculée depuis Q et la section, et la portée découle de la loi standard. Déplacez aussi bouches, reprises, fenêtres et mobilier à la souris sur la vue de dessus.</p>
+    <p class="note">Plafond : X, Y = position, direction réglable. <b>Bord du plan</b> (mur périphérique, pièce quelconque) : « pos le long du bord » + Z = hauteur, soufflage horizontal vers l'intérieur. <b>Cloison / meuble</b> : choisissez l'élément et sa face (±x, ±y), soufflage horizontal depuis la cloison (ex. bouche de soufflage sur cloison). « Rotation (°) » oriente la bouche autour de son axe (essentiel pour les fentes). <b>v0 fab.</b> (m/s) et <b>portée fab.</b> (m, throw à vTerm) sont les données fabricant : si renseignées, le jet analytique est calibré dessus ; sinon v0 est calculée depuis Q et la section, et la portée découle de la loi standard. Les débits (m³/h) sont affichés à côté de chaque bouche sur la vue de dessus. Déplacez aussi bouches, reprises, fenêtres et mobilier à la souris sur la vue de dessus.</p>
     <h2>4. Reprises d'air (extraction)</h2>
     <div id="extraction"></div>
     <div class="btnline"><button class="mini" onclick="addExtract()">+ Ajouter une reprise d'air</button></div>
@@ -104,14 +104,15 @@ input[type=range]{padding:0}
     <p class="note" id="progress">Le champ de vitesse, l'âge de l'air et la température sont résolus directement en régime permanent sur une grille 3D (pas de simulation transitoire tronquée).</p>
     <h2>7. Affichage</h2>
     <div id="affparams"></div>
-    <h2>8. Scénario (fichier)</h2>
+    <h2>8. Étude (fichier)</h2>
     <div class="btnline">
-      <button onclick="exporterJSON()">Exporter le scénario (JSON)</button>
-      <button onclick="document.getElementById('fileImport').click()">Importer un scénario…</button>
+      <button onclick="exporterJSON()">Exporter l'étude (JSON, avec les calculs)</button>
+      <button onclick="document.getElementById('fileImport').click()">Importer une étude…</button>
       <input type="file" id="fileImport" accept=".json,application/json" style="display:none" onchange="importerJSON(event)">
       <button onclick="copierURL()">Copier l'URL de partage</button>
       <button onclick="resetConfig()">Config par défaut</button>
     </div>
+    <p class="note">L'export JSON contient <b>toutes les pièces</b> de l'étude <b>avec leurs calculs déjà faits</b> (champs 3D, métriques, convergence) : réimportez le fichier pour tout retrouver, y compris les heat maps et la vue 3D.</p>
     <h2>8bis. Scénarios enregistrés</h2>
     <div class="btnline">
       <input type="text" id="nomScenario" placeholder="Nom du scénario…" style="width:140px">
@@ -170,24 +171,57 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 
 /* ================= État ================= */
 let uid=1;
-const DEFAULT_STATE={
-  room:{L:6,l:4,H:2.6,Tamb:20,Tsouf:16,Text:5},
+const DEFAULT_PIECE={
+  nom:'Pièce 1',
+  room:{L:6,l:4,H:2.6,Tamb:20,Tsouf:16,Text:5,poly:null},
   windows:[
-    {id:uid++,mur:'murY0',pos:1.4,z:0.9,larg:1.2,haut:1.4,u:2.0,q:0}
+    {id:uid++,edge:0,pos:1.4,z:0.9,larg:1.2,haut:1.4,u:2.0,q:0}
   ],
   supplies:[
-    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:2,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0,v0:null,portee:null},
-    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:4,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0,v0:null,portee:null}
+    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:2,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0,v0:null,portee:null,cloison:0,face:'x+'},
+    {id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:4,y:2,z:2.6,q:90,dir:'vert',azi:0,ori:0,v0:null,portee:null,cloison:0,face:'x+'}
   ],
-  extracts:[{id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:0.3,z:2.6,q:0}],
+  extracts:[{id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:0.3,z:2.6,q:0,cloison:0,face:'x+'}],
   mobilier:[
     {id:uid++,preset:'Table',nom:'Table 1',x:2,y:1.2,z:0,L:1.6,l:0.8,H:0.75},
     {id:uid++,preset:'Table 2',x:4,y:1.2,z:0,L:1.6,l:0.8,H:0.75}
   ],
   sim:{res:0.25,nu0:0.005,cnu:0.09,zocc:1.8,seed:42,nstream:24,grandeur:'balayage',tranche:1.1,maxIt:40000,vTerm:0.25}
 };
-let state=JSON.parse(JSON.stringify(DEFAULT_STATE));
+function defaultPiece(nom){const p=JSON.parse(JSON.stringify(DEFAULT_PIECE));p.nom=nom||'Pièce 1';p._run=null;p._simLite=null;return p;}
+/* Une étude = plusieurs pièces. `state` pointe toujours vers la pièce active. */
+let study={pieces:[defaultPiece('Pièce 1')],active:0};
+let state=study.pieces[0];
 let sim=null;
+/* résultats complets (champs 3D) conservés en mémoire par pièce ; version allégée en localStorage */
+function simLiteOf(run){return run?{res:run.sim.res,conv:run.sim.conv,warn:run.sim.warn,connected:run.sim.connected}:null;}
+
+/* ================= Géométrie du plan (polygone, rectangle par défaut) ================= */
+function polyOf(r){if(r.poly&&r.poly.length>=3)return r.poly;return [[0,0],[r.L,0],[r.L,r.l],[0,r.l]];}
+function polySignedArea(poly){let a=0;for(let i=0;i<poly.length;i++){const j=(i+1)%poly.length;a+=poly[i][0]*poly[j][1]-poly[j][0]*poly[i][1];}return a/2;}
+function ensureCCW(poly){if(polySignedArea(poly)<0)poly.reverse();return poly;}
+function polyArea(poly){return Math.abs(polySignedArea(poly));}
+function bboxOf(poly){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of poly){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1]);}return{x0:x0,y0:y0,x1:x1,y1:y1};}
+function pointInPoly(x,y,poly){let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))inside=!inside;}return inside;}
+/* Bord k = segment poly[k] -> poly[k+1] (polygone CCW : normale sortante = (dy,-dx)/len) */
+function edgeOf(poly,k){const A=poly[k],B=poly[(k+1)%poly.length];const dx=B[0]-A[0],dy=B[1]-A[1];const len=Math.hypot(dx,dy)||1e-9;return{A:A,B:B,dx:dx/len,dy:dy/len,len:len,out:[dy/len,-dx/len],inn:[-dy/len,dx/len]};}
+function nearestOnPoly(x,y,poly){let best=null,bd=1e18;for(let k=0;k<poly.length;k++){const e=edgeOf(poly,k);const t=clamp((x-e.A[0])*e.dx+(y-e.A[1])*e.dy,0,e.len);const px=e.A[0]+e.dx*t,py=e.A[1]+e.dy*t;const d=(px-x)*(px-x)+(py-y)*(py-y);if(d<bd){bd=d;best=[px,py];}}return best;}
+function clampToRoom(x,y){const r=state.room,poly=polyOf(r),bb=bboxOf(poly);x=clamp(x,bb.x0,bb.x1);y=clamp(y,bb.y0,bb.y1);if(!pointInPoly(x,y,poly)){const p=nearestOnPoly(x,y,poly);return[p[0],p[1]];}return[x,y];}
+/* montage -> libellé + options de la liste déroulante */
+function montageOptions(sel){
+  const poly=polyOf(state.room);
+  let opts='<option value="plafond" '+(sel==='plafond'||!sel?'selected':'')+'>Plafond</option>';
+  poly.forEach((p,k)=>{const e=edgeOf(poly,k);opts+='<option value="edge'+k+'" '+(sel==='edge'+k?'selected':'')+'>Bord '+(k+1)+' ('+fmt(e.A[0],1)+','+fmt(e.A[1],1)+')→('+fmt(e.B[0],1)+','+fmt(e.B[1],1)+')</option>';});
+  opts+='<option value="cloison" '+(sel==='cloison'?'selected':'')+'>Cloison / meuble</option>';
+  return opts;
+}
+function montageLabel(m){
+  if(!m||m==='plafond')return'Plafond';
+  if(m==='cloison')return'Cloison / meuble';
+  if(m.indexOf('edge')===0){const k=parseInt(m.slice(4));const poly=polyOf(state.room);if(poly[k]){const e=edgeOf(poly,k);return 'Bord '+(k+1)+' ('+fmt(e.A[0],1)+','+fmt(e.A[1],1)+')→('+fmt(e.B[0],1)+','+fmt(e.B[1],1)+')';}return m;}
+  return m;
+}
+const FACE_LABEL={'x+':'face +x (est)','x-':'face −x (ouest)','y+':'face +y (nord)','y-':'face −y (sud)'};
 
 const $=s=>document.querySelector(s);
 const PRESETS={
@@ -202,13 +236,68 @@ const DIR_LABEL={vert:'▼ verticale',a30:'↘ inclinée 30°',a45:'↘ incliné
 const GRAND_LABEL={balayage:'Taux de balayage (%)',age:'Âge de l’air (min)',temp:'Température (°C)',vit:'Vitesse (m/s)'};
 
 /* ================= Persistance : localStorage + URL hash ================= */
-function saveLocal(){try{localStorage.setItem('balayage-v2',JSON.stringify(state));}catch(e){}}
-function loadLocal(){try{const s=localStorage.getItem('balayage-v2');if(s){const o=JSON.parse(s);if(o&&o.room&&o.supplies)state=o;}}catch(e){}}
-function loadHash(){try{if(location.hash.length>1){const o=JSON.parse(decodeURIComponent(location.hash.slice(1)));if(o&&o.room&&o.supplies){state=o;return true;}}}catch(e){}return false;}
-function copierURL(){const u=location.origin+location.pathname+'#'+encodeURIComponent(JSON.stringify(state));navigator.clipboard.writeText(u).then(()=>{alert('URL copiée dans le presse-papiers :\n'+u);},()=>{prompt('URL de partage :',u);});}
-function exporterJSON(){const blob=new Blob([JSON.stringify(state,null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='scenario-balayage.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);}
-function importerJSON(ev){const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(o&&o.room&&o.supplies){state=o;uid=1+Math.max(0,...[...state.supplies,...state.extracts,...state.mobilier,...(state.windows||[])].map(b=>b.id||0));renderAll();saveLocal();refreshViews();alert('Scénario importé.');}}catch(e){alert('Fichier invalide : '+e.message);}};r.readAsText(f);ev.target.value='';}
-function resetConfig(){if(!confirm('Revenir à la configuration par défaut ?'))return;state=JSON.parse(JSON.stringify(DEFAULT_STATE));uid=1+Math.max(0,...[...state.supplies,...state.extracts,...state.mobilier,...(state.windows||[])].map(b=>b.id||0));renderAll();saveLocal();refreshViews();}
+/* Sérialise un run complet (champs 3D) en JSON : tableaux typés -> tableaux simples */
+function serializeRun(run){
+  if(!run)return null;
+  const ta=a=>Array.from(a);
+  return {G:{nx:run.G.nx,ny:run.G.ny,nz:run.G.nz,res:run.G.res,N:run.G.N,tauN:run.G.tauN,ACH:run.G.ACH,volRoom:run.G.volRoom,Qtot:run.G.Qtot,
+    solid:ta(run.G.solid),S:ta(run.G.S),vc:ta(run.G.vc),dirMask:ta(run.G.dirMask),extMask:ta(run.G.extMask)},
+    sim:{age:ta(run.sim.age),temp:ta(run.sim.temp),res:run.sim.res,streams:run.sim.streams,conv:run.sim.conv,warn:run.sim.warn,connected:run.sim.connected}};
+}
+function deserializeRun(o){
+  if(!o||!o.G||!o.sim)return null;
+  return {G:{nx:o.G.nx,ny:o.G.ny,nz:o.G.nz,res:o.G.res,N:o.G.N,tauN:o.G.tauN,ACH:o.G.ACH,volRoom:o.G.volRoom,Qtot:o.G.Qtot,
+    solid:new Uint8Array(o.G.solid),S:new Float64Array(o.G.S),vc:new Float64Array(o.G.vc),dirMask:new Uint8Array(o.G.dirMask),extMask:new Uint8Array(o.G.extMask)},
+    sim:{age:new Float64Array(o.sim.age),temp:new Float64Array(o.sim.temp),res:o.sim.res,streams:o.sim.streams||[],conv:o.sim.conv||[],warn:o.sim.warn||[],connected:o.sim.connected}};
+}
+function simLiteOf(run){return run?{res:run.sim.res,conv:run.sim.conv,warn:run.sim.warn,connected:run.sim.connected}:null;}
+/* pièce sans le run lourd (localStorage / URL) — le replacer saute _run (tableaux typés) */
+function pieceLite(p){const q=JSON.parse(JSON.stringify(p,(k,v)=>k==='_run'?undefined:v));q._simLite=p._simLite||null;return q;}
+function allIds(){let m=0;for(const p of study.pieces)for(const arr of [p.supplies,p.extracts,p.mobilier,p.windows||[]])for(const b of arr)m=Math.max(m,b.id||0);return m;}
+function saveLocal(){try{localStorage.setItem('balayage-study-v3',JSON.stringify({format:'balayage-study-v3',active:study.active,pieces:study.pieces.map(pieceLite)}));}catch(e){}}
+function loadStudyObject(o){
+  if(o&&(o.format==='balayage-study-v3'||o.format==='balayage-etude-v3')&&Array.isArray(o.pieces)&&o.pieces.length){
+    study={pieces:o.pieces,active:clamp(o.active||0,0,o.pieces.length-1)};
+    for(const p of study.pieces){
+      p._run=(o.format==='balayage-etude-v3')?deserializeRun(p.results):(p._run&&p._run.G?deserializeRun(p._run):null);
+      p._simLite=simLiteOf(p._run)||p._simLite||null;
+    }
+    state=study.pieces[study.active];return true;
+  }
+  if(o&&o.room&&o.supplies){ /* ancien format mono-pièce */
+    study={pieces:[Object.assign(defaultPiece('Pièce 1'),o)],active:0};
+    state=study.pieces[0];return true;
+  }
+  return false;
+}
+function loadLocal(){try{const s=localStorage.getItem('balayage-study-v3');if(s&&loadStudyObject(JSON.parse(s))){sim=state._run?state._run.sim:null;return true;}}catch(e){}return false;}
+function loadHash(){try{if(location.hash.length>1&&loadStudyObject(JSON.parse(decodeURIComponent(location.hash.slice(1))))){sim=state._run?state._run.sim:null;return true;}}catch(e){}return false;}
+function copierURL(){const u=location.origin+location.pathname+'#'+encodeURIComponent(JSON.stringify({format:'balayage-study-v3',active:study.active,pieces:study.pieces.map(pieceLite)}));navigator.clipboard.writeText(u).then(()=>{alert('URL copiée dans le presse-papiers :\n'+u);},()=>{prompt('URL de partage :',u);});}
+/* Export de l'étude COMPLÈTE (config de toutes les pièces + calculs déjà faits) */
+function exporterJSON(){
+  const o={format:'balayage-etude-v3',date:new Date().toISOString(),active:study.active,
+    pieces:study.pieces.map(p=>{const q=pieceLite(p);q.results=serializeRun(p._run);return q;})};
+  const blob=new Blob([JSON.stringify(o)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='etude-balayage-avec-calculs.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+function importerJSON(ev){
+  const f=ev.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const o=JSON.parse(r.result);
+      if(!loadStudyObject(o))throw new Error('format non reconnu');
+      uid=1+allIds();
+      normalizeAll();
+      sim=state._run?state._run.sim:null;
+      if(sim&&state._run)Object.assign(G,state._run.G);else Object.assign(G,{N:0});
+      reinitUI();renderAll();saveLocal();refreshViews();renderPieces();
+      alert('Étude importée ('+study.pieces.length+' pièce'+(study.pieces.length>1?'s':'')+' — calculs restaurés si présents dans le fichier).');
+    }catch(e){alert('Fichier invalide : '+e.message);}
+  };
+  r.readAsText(f);ev.target.value='';
+}
+function resetConfig(){if(!confirm('Revenir à la configuration par défaut (pièce unique) ?'))return;study={pieces:[defaultPiece('Pièce 1')],active:0};state=study.pieces[0];sim=null;uid=1+allIds();Object.assign(G,{N:0});reinitUI();renderAll();saveLocal();refreshViews();renderPieces();}
 
 /* ================= Scénarios nommés (localStorage) ================= */
 function loadScenarios(){try{const s=localStorage.getItem('balayage-scenarios-v2');return s?JSON.parse(s):[];}catch(e){return[];}}
@@ -216,7 +305,7 @@ function saveScenariosList(list){try{localStorage.setItem('balayage-scenarios-v2
 function sauverScenario(){
   const nom=$('#nomScenario').value.trim()||('Scénario '+new Date().toLocaleString('fr-FR'));
   const list=loadScenarios();
-  const entry={nom:nom,date:new Date().toISOString(),state:JSON.parse(JSON.stringify(state))};
+  const entry={nom:nom,date:new Date().toISOString(),piece:state.nom||('Pièce '+(study.active+1)),state:pieceLite(state)};
   const ex=list.findIndex(s=>s.nom===nom);
   if(ex>=0){if(!confirm('Remplacer le scénario « '+nom+' » ?'))return;list[ex]=entry;}
   else list.push(entry);
@@ -225,10 +314,11 @@ function sauverScenario(){
 }
 function chargerScenario(i){
   const list=loadScenarios();if(!list[i])return;
-  if(!confirm('Charger le scénario « '+list[i].nom+' » ? La configuration actuelle sera remplacée.'))return;
-  state=JSON.parse(JSON.stringify(list[i].state));
-  uid=1+Math.max(0,...[...state.supplies,...state.extracts,...state.mobilier,...(state.windows||[])].map(b=>b.id||0));
-  sim=null;reinit();renderAll();saveLocal();refreshViews();
+  if(!confirm('Charger le scénario « '+list[i].nom+' » dans la pièce active ? La configuration actuelle de « '+(state.nom||'Pièce '+(study.active+1))+' » sera remplacée.'))return;
+  const np=JSON.parse(JSON.stringify(list[i].state));np.nom=state.nom;np._run=null;np._simLite=null;
+  study.pieces[study.active]=np;state=np;
+  uid=1+allIds();
+  normalizeAll();sim=null;Object.assign(G,{N:0});reinitUI();renderAll();saveLocal();refreshViews();renderPieces();
 }
 function supprimerScenario(i){
   const list=loadScenarios();if(!list[i])return;
@@ -254,8 +344,9 @@ function ajouterHistorique(){
   if(!sim||!sim.res)return;
   const h={
     date:new Date().toISOString(),
+    piece:state.nom||('Pièce '+(study.active+1)),
     nom:$('#nomScenario').value.trim()||null,
-    state:JSON.parse(JSON.stringify(state)),
+    state:pieceLite(state),
     res:JSON.parse(JSON.stringify(sim.res)),
     conv:sim.conv?sim.conv.slice():[],
     warn:sim.warn?sim.warn.slice():[]
@@ -268,10 +359,14 @@ function ajouterHistorique(){
 }
 function chargerHistorique(i){
   const list=loadHistory();if(!list[i])return;
-  if(!confirm('Recharger le run du '+new Date(list[i].date).toLocaleString('fr-FR')+' ?'))return;
-  state=JSON.parse(JSON.stringify(list[i].state));
-  uid=1+Math.max(0,...[...state.supplies,...state.extracts,...state.mobilier,...(state.windows||[])].map(b=>b.id||0));
-  sim=null;reinit();renderAll();saveLocal();refreshViews();
+  if(!confirm('Recharger le run du '+new Date(list[i].date).toLocaleString('fr-FR')+' (pièce « '+(list[i].piece||'?')+' ») dans la pièce active ?'))return;
+  const np=JSON.parse(JSON.stringify(list[i].state));np.nom=state.nom;np._run=null;np._simLite=null;
+  study.pieces[study.active]=np;state=np;
+  uid=1+allIds();
+  normalizeAll();
+  sim={res:list[i].res,conv:list[i].conv,warn:list[i].warn,connected:undefined,age:null,temp:null,streams:[]};
+  Object.assign(G,{N:0});reinitUI();renderAll();saveLocal();refreshViews();renderPieces();
+  updateStats();drawHeatmap();render3D();
 }
 function supprimerHistorique(i){const list=loadHistory();list.splice(i,1);saveHistoryList(list);renderHistorique();}
 function viderHistorique(){if(!confirm('Vider tout l’historique ?'))return;saveHistoryList([]);renderHistorique();}
@@ -282,6 +377,7 @@ function renderHistorique(){
     const d=new Date(h.date),R=h.res;
     return `<div class="row" style="padding:4px 6px;margin:3px 0;flex-wrap:wrap;gap:4px">
       <span style="font-size:10.5px;color:var(--mut)">${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
+      ${h.piece?`<span class="tag" style="background:#241a3a;color:#c4b5fd">${esc(h.piece)}</span>`:''}
       <span class="tag" style="background:#0b2237;color:var(--acc2)">ERE ${fmt(R.ERE*100,0)}%</span>
       <span class="tag" style="background:#0b2237;color:var(--acc)">âge ${fmt(R.ageMoy/60,1)}min</span>
       <span class="tag" style="background:#0b2237;color:var(--warn)">${fmt(R.pctDead,0)}% mort</span>
@@ -302,6 +398,7 @@ function optionsRuns(){
   return opts;
 }
 function getRunData(which){
+
   if(which==='cur')return sim&&sim.res?{res:sim.res,label:'Run actuel',state:state}:null;
   const list=loadHistory();const h=list[parseInt(which)];
   if(!h)return null;
@@ -378,63 +475,124 @@ function dirVec(b){
   const az=(b.azi||0)*Math.PI/180, r=a*Math.PI/180;
   return [Math.sin(r)*Math.cos(az),Math.sin(r)*Math.sin(az),-Math.cos(r)];
 }
+/* Position 3D d'une bouche/reprise :
+   - plafond : (x, y, H)
+   - edgeK (bord K du polygone) : x = position le long du bord (m), z = hauteur ; le point est sur le bord
+   - cloison : sur la face `face` du meuble `cloison` (index mobilier) ; x/y = position le long de la face, z = hauteur */
 function posOf(m,r){
-  const x=clamp(m.x||0,0,r.L),y=clamp(m.y||0,0,r.l),z=clamp(m.z==null?r.H:m.z,0,r.H);
-  switch(m.montage){
-    case 'murX0':return[0,y,z];
-    case 'murX1':return[r.L,y,z];
-    case 'murY0':return[x,0,z];
-    case 'murY1':return[x,r.l,z];
-    default:return[x,y,r.H];
+  const z=clamp(m.z==null?r.H:m.z,0,r.H);
+  const mg=m.montage||'plafond';
+  if(mg.indexOf('edge')===0){
+    const poly=polyOf(r),k=clamp(parseInt(mg.slice(4))||0,0,poly.length-1),e=edgeOf(poly,k);
+    const t=clamp(m.x||0,0,e.len);
+    return[e.A[0]+e.dx*t,e.A[1]+e.dy*t,z];
   }
+  if(mg==='cloison'){
+    const mm=state.mobilier[(m.cloison|0)]||state.mobilier[0]||{x:0,y:0,L:0,l:0};
+    const f=m.face||'x+';
+    if(f==='x+')return[mm.x+mm.L,clamp(m.y==null?mm.y+mm.l/2:m.y,mm.y,mm.y+mm.l),z];
+    if(f==='x-')return[mm.x,clamp(m.y==null?mm.y+mm.l/2:m.y,mm.y,mm.y+mm.l),z];
+    if(f==='y+')return[clamp(m.x==null?mm.x+mm.L/2:m.x,mm.x,mm.x+mm.L),mm.y+mm.l,z];
+    return[clamp(m.x==null?mm.x+mm.L/2:m.x,mm.x,mm.x+mm.L),mm.y,z];
+  }
+  const bb=bboxOf(polyOf(r));
+  const x=clamp(m.x||0,bb.x0,bb.x1),y=clamp(m.y||0,bb.y0,bb.y1);
+  return[x,y,r.H];
 }
 function slotAxes(b){
   const a=(b.ori||0)*Math.PI/180;
   let u,v;
-  if(b.montage==='murX0'||b.montage==='murX1'){u=[0,1,0];v=[0,0,1];}
-  else if(b.montage==='murY0'||b.montage==='murY1'){u=[1,0,0];v=[0,0,1];}
-  else{u=[1,0,0];v=[0,1,0];}
+  const mg=b.montage||'plafond';
+  if(mg.indexOf('edge')===0){
+    const poly=polyOf(state.room),k=clamp(parseInt(mg.slice(4))||0,0,poly.length-1),e=edgeOf(poly,k);
+    u=[e.dx,e.dy,0];v=[0,0,1];
+  }else if(mg==='cloison'){
+    const f=b.face||'x+';
+    if(f==='x+'||f==='x-'){u=[0,1,0];v=[0,0,1];}else{u=[1,0,0];v=[0,0,1];}
+  }else{u=[1,0,0];v=[0,1,0];}
   const c=Math.cos(a),s=Math.sin(a);
   return{long:[u[0]*c+v[0]*s,u[1]*c+v[1]*s,u[2]*c+v[2]*s],wid:[-u[0]*s+v[0]*c,-u[1]*s+v[1]*c,-u[2]*s+v[2]*c]};
 }
+/* direction de soufflage : normale entrante du bord / de la face de cloison, sinon vecteur réglé (plafond) */
 function dirOf(b,r){
-  switch(b.montage){
-    case 'murX0':return[1,0,0];
-    case 'murX1':return[-1,0,0];
-    case 'murY0':return[0,1,0];
-    case 'murY1':return[0,-1,0];
-    default:return dirVec(b);
+  const mg=b.montage||'plafond';
+  if(mg.indexOf('edge')===0){
+    const poly=polyOf(r),k=clamp(parseInt(mg.slice(4))||0,0,poly.length-1),e=edgeOf(poly,k);
+    return[e.inn[0],e.inn[1],0];
   }
+  if(mg==='cloison'){
+    const f=b.face||'x+';
+    if(f==='x+')return[1,0,0];
+    if(f==='x-')return[-1,0,0];
+    if(f==='y+')return[0,1,0];
+    return[0,-1,0];
+  }
+  return dirVec(b);
 }
 
 /* ================= Rendu du panneau ================= */
+let editPlan=false;
 function renderPiece(){
   const r=state.room;
+  const poly=polyOf(r),bb=bboxOf(poly),nSommets=r.poly?poly.length:4;
   $('#piece').innerHTML=['L','l','H'].map(k=>`<label class="f"><span>Dimension ${k} (m)</span><input type="number" step="0.1" min="0.5" value="${r[k]}" oninput="updRoom('${k}',this.value)"></label>`).join('')+
   `<label class="f"><span>Température ambiante (°C)</span><input type="number" step="0.5" value="${r.Tamb}" oninput="updRoom('Tamb',this.value)"></label>
    <label class="f"><span>Température de soufflage (°C)</span><input type="number" step="0.5" value="${r.Tsouf}" oninput="updRoom('Tsouf',this.value)"></label>
-   <label class="f"><span>Température extérieure (°C)</span><input type="number" step="0.5" value="${r.Text==null?r.Tamb:r.Text}" oninput="updRoom('Text',this.value)"></label>`;
+   <label class="f"><span>Température extérieure (°C)</span><input type="number" step="0.5" value="${r.Text==null?r.Tamb:r.Text}" oninput="updRoom('Text',this.value)"></label>
+   <div class="btnline">
+     <button class="mini" id="btnEditPlan" onclick="toggleEditPlan()">${editPlan?'✓ Terminer l’édition du plan':'✏️ Éditer le plan sur la vue'}</button>
+     <button class="mini" onclick="resetPoly()" title="Revenir à une pièce rectangulaire L × l">Pièce rectangulaire</button>
+   </div>
+   <p class="note">Plan actuel : ${r.poly?'polygone à '+nSommets+' sommets (aire '+fmt(polyArea(poly),1)+' m²)':'rectangle '+r.L+' × '+r.l+' m'} — emprise ${fmt(bb.x1-bb.x0,1)} × ${fmt(bb.y1-bb.y0,1)} m. ${editPlan?'<b>Mode édition :</b> glissez un sommet (rond) pour déplacer le plan ; glissez un point milieu (carré) pour insérer un sommet ; double-clic sur un sommet = saisir x,y ; double-clic sur une cote = saisir la longueur du bord.</b>':'Cliquez « Éditer le plan » pour rendre la pièce non rectangulaire et modifier le plan / les côtes directement sur la vue de dessus.'}</p>`;
 }
+function toggleEditPlan(){editPlan=!editPlan;if(editPlan&&!state.room.poly){state.room.poly=polyOf(state.room).map(p=>p.slice());ensureCCW(state.room.poly);marquerPerime();}renderPiece();refreshViews();}
+function resetPoly(){if(!confirm('Revenir à une pièce rectangulaire L × l ?'))return;state.room.poly=null;marquerPerime();editPlan=false;renderPiece();saveLocal();refreshViews();}
+/* double-clic en mode édition : cote (longueur du bord) ou sommet (x,y) */
+function editPlanDblClick(x,y){
+  const r=state.room;if(!r.poly||!editPlan)return;
+  const poly=r.poly;
+  for(let k=0;k<poly.length;k++){
+    const p=poly[k];
+    if(Math.hypot(p[0]-x,p[1]-y)<0.3){
+      const s=prompt('Coordonnées du sommet '+(k+1)+' (x;y en m) :',fmt(p[0],2)+';'+fmt(p[1],2));
+      if(s){const parts=s.split(/[;,]/);const nx=parseFloat(parts[0]),ny=parseFloat(parts[1]);if(!isNaN(nx)&&!isNaN(ny)){poly[k]=[nx,ny];afterPolyEdit();} }
+      return;
+    }
+  }
+  for(let k=0;k<poly.length;k++){
+    const e=edgeOf(poly,k);
+    const t=clamp((x-e.A[0])*e.dx+(y-e.A[1])*e.dy,0,e.len);
+    const px=e.A[0]+e.dx*t,py=e.A[1]+e.dy*t;
+    if(Math.hypot(px-x,py-y)<0.25){
+      const s=prompt('Longueur du bord '+(k+1)+' (m) — de ('+fmt(e.A[0],2)+','+fmt(e.A[1],2)+') vers ('+fmt(e.B[0],2)+','+fmt(e.B[1],2)+') :',fmt(e.len,2));
+      if(s){const nl=parseFloat(s);if(!isNaN(nl)&&nl>0.2){poly[(k+1)%poly.length]=[e.A[0]+e.dx*nl,e.A[1]+e.dy*nl];afterPolyEdit();}}
+      return;
+    }
+  }
+}
+function afterPolyEditLight(){marquerPerime();if(state.room.poly)ensureCCW(state.room.poly);}
+function afterPolyEdit(){afterPolyEditLight();const bb=bboxOf(polyOf(state.room));state.room.L=Math.round((bb.x1-bb.x0)*100)/100;state.room.l=Math.round((bb.y1-bb.y0)*100)/100;saveLocal();renderPiece();refreshViews();}
 /* ================= Fenêtres sur les parois ================= */
 function renderWindows(){
   const r=state.room;
-  const murs=Object.keys(MONT_LABEL).filter(k=>k!=='plafond');
+  const poly=polyOf(r);
   $('#fenetres').innerHTML=(state.windows||[]).map((w,i)=>{
+    const edgeOpts=poly.map((p,k)=>{const e=edgeOf(poly,k);return `<option value="${k}" ${(w.edge==null?0:w.edge)===k?'selected':''}>Bord ${k+1} (${fmt(e.len,1)} m)</option>`;}).join('');
     return `<div class="row"><span class="tag" style="background:#3a2f08;color:var(--warn)">Fenêtre ${i+1}</span>
-      <label>mur<select onchange="updWindow(${i},'mur',this.value)">${murs.map(t=>`<option value="${t}" ${w.mur===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
-      <label>pos (m)<input type="number" step="0.1" min="0" value="${w.pos}" oninput="updWindow(${i},'pos',this.value)" title="Position le long du mur (m)"></label>
+      <label>bord<select onchange="updWindow(${i},'edge',this.value)">${edgeOpts}</select></label>
+      <label>pos (m)<input type="number" step="0.1" min="0" value="${w.pos}" oninput="updWindow(${i},'pos',this.value)" title="Position le long du bord (m)"></label>
       <label>allège z (m)<input type="number" step="0.05" min="0" max="${r.H}" value="${w.z==null?0:w.z}" oninput="updWindow(${i},'z',this.value)" title="Hauteur du bas de la fenêtre (m)"></label>
       <label>larg. (m)<input type="number" step="0.05" min="0.1" value="${w.larg}" oninput="updWindow(${i},'larg',this.value)"></label>
       <label>haut. (m)<input type="number" step="0.05" min="0.1" value="${w.haut}" oninput="updWindow(${i},'haut',this.value)"></label>
       <label>U (W/m²K)<input type="number" step="0.1" min="0.3" max="6" value="${w.u==null?2:w.u}" oninput="updWindow(${i},'u',this.value)" title="Coefficient surfacique du vitrage (W/m²K)"></label>
       <label>infil. (m³/h)<input type="number" step="1" min="0" value="${w.q||0}" oninput="updWindow(${i},'q',this.value)" title="Débit d'infiltration d'air extérieur à travers la fenêtre (m³/h) — air neuf à T extérieure"></label>
       <button class="mini" onclick="copierWindow(${i})" title="Dupliquer cette fenêtre">⧉</button><button class="mini" onclick="delWindow(${i})">✕</button></div>`;
-  }).join('')+'<p class="note">Les fenêtres échangent avec l’extérieur à la température extérieure (section 1) via U ; l’infiltration est une entrée d’air neuf à T extérieure, rééquilibrée sur les reprises (le débit total extrait = soufflage + infiltration).</p>';
+  }).join('')+'<p class="note">Fenêtre = rectangle sur un bord du plan (pièce rectangulaire ou non) : « pos » = position le long du bord (m), allège z, largeur × hauteur. Les fenêtres échangent avec l’extérieur à la température extérieure (section 1) via U ; l’infiltration est une entrée d’air neuf à T extérieure, rééquilibrée sur les reprises (débit total extrait = soufflage + infiltration). Déplaçables à la souris sur la vue de dessus (traits ambrés « F1… »).</p>';
 }
-function updWindow(i,k,v){marquerPerime();const w=(state.windows||[])[i];if(!w)return;if(k==='mur'){w[k]=v;renderWindows();saveLocal();refreshViews();return;}const x=parseFloat(v);if(!isNaN(x))w[k]=x;saveLocal();refreshViews();}
+function updWindow(i,k,v){marquerPerime();const w=(state.windows||[])[i];if(!w)return;if(k==='edge'){w.edge=parseInt(v);if(isNaN(w.edge))w.edge=0;renderWindows();saveLocal();refreshViews();return;}const x=parseFloat(v);if(!isNaN(x))w[k]=x;saveLocal();refreshViews();}
 function delWindow(i){marquerPerime();state.windows.splice(i,1);renderWindows();saveLocal();refreshViews();}
-function copierWindow(i){marquerPerime();const w=JSON.parse(JSON.stringify(state.windows[i]));w.id=uid++;const len=(w.mur==='murX0'||w.mur==='murX1')?state.room.l:state.room.L;w.pos=clamp((w.pos||0)+0.3,0,Math.max(0,len-(w.larg||0)));state.windows.push(w);renderWindows();saveLocal();refreshViews();}
-function addWindow(){marquerPerime();const r=state.room;const larg=1.2;state.windows.push({id:uid++,mur:'murY0',pos:clamp(r.L/2-larg/2,0,Math.max(0,r.L-larg)),z:0.9,larg:larg,haut:1.4,u:2.0,q:0});renderWindows();saveLocal();refreshViews();}
+function copierWindow(i){marquerPerime();const w=JSON.parse(JSON.stringify(state.windows[i]));w.id=uid++;const e=edgeOf(polyOf(state.room),w.edge==null?0:w.edge);w.pos=clamp((w.pos||0)+0.3,0,Math.max(0,e.len-(w.larg||0)));state.windows.push(w);renderWindows();saveLocal();refreshViews();}
+function addWindow(){marquerPerime();const r=state.room;const larg=1.2;const e=edgeOf(polyOf(r),0);state.windows.push({id:uid++,edge:0,pos:clamp(e.len/2-larg/2,0,Math.max(0,e.len-larg)),z:0.9,larg:larg,haut:1.4,u:2.0,q:0});renderWindows();saveLocal();refreshViews();}
 function renderSupplies(){
   const r=state.room;
   $('#soufflage').innerHTML=state.supplies.map((b,i)=>{
@@ -443,13 +601,19 @@ function renderSupplies(){
     const pl=(!b.montage||b.montage==='plafond')?'':'disabled';
     const v0e=(b.v0&&b.v0>0)?b.v0:v0Of(b);
     const pAuto=porteeOf(b);
+    const mg=b.montage||'plafond';
+    const posLbl=(mg.indexOf('edge')===0)?'<label>pos le long du bord (m)<input type="number" step="0.1" min="0" value="'+(b.x||0)+'" oninput="updSupply('+i+',\'x\',this.value)"></label>'
+      :(mg==='cloison'?'<label>pos le long de la cloison (m)<input type="number" step="0.1" min="0" value="'+((b.face==='y+'||b.face==='y-')?(b.x||0):(b.y||0))+'" oninput="updSupply('+i+',\''+((b.face==='y+'||b.face==='y-')?'x':'y')+'\',this.value)"></label>':'');
+    const cloisonSel=mg==='cloison'?`<label>cloison<select onchange="updSupply(${i},'cloison',this.value)">${state.mobilier.map((m,mi)=>`<option value="${mi}" ${(b.cloison|0)===mi?'selected':''}>${esc(m.nom||('Élément '+(mi+1)))}</option>`).join('')}</select></label>
+      <label>face<select onchange="updSupply(${i},'face',this.value)">${Object.keys(FACE_LABEL).map(t=>`<option value="${t}" ${(b.face||'x+')===t?'selected':''}>${FACE_LABEL[t]}</option>`).join('')}</select></label>`:'';
+    const xyz=(mg==='plafond')?`<label>X (m)<input type="number" step="0.1" value="${b.x}" oninput="updSupply(${i},'x',this.value)"></label>
+      <label>Y (m)<input type="number" step="0.1" value="${b.y}" oninput="updSupply(${i},'y',this.value)"></label>`:'';
     return `<div class="row"><span class="tag">Soufflage ${i+1}</span>
-      <label>montage<select onchange="updSupply(${i},'montage',this.value)">${Object.keys(MONT_LABEL).map(t=>`<option value="${t}" ${(b.montage||'plafond')===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
+      <label>montage<select onchange="updSupply(${i},'montage',this.value)">${montageOptions(mg)}</select></label>
       <label>forme<select onchange="updSupply(${i},'type',this.value)">${Object.keys(TYPE_LABEL).map(t=>`<option value="${t}" ${b.type===t?'selected':''}>${TYPE_LABEL[t]}</option>`).join('')}</select></label>
       <label>${dimLbl}<input type="number" step="0.01" min="0.01" value="${b.dim}" oninput="updSupply(${i},'dim',this.value)"></label>
       ${fente}
-      <label>X (m)<input type="number" step="0.1" value="${b.x}" oninput="updSupply(${i},'x',this.value)"></label>
-      <label>Y (m)<input type="number" step="0.1" value="${b.y}" oninput="updSupply(${i},'y',this.value)"></label>
+      ${xyz}${posLbl}${cloisonSel}
       <label>Z (m)<input type="number" step="0.1" value="${b.z==null?r.H:b.z}" oninput="updSupply(${i},'z',this.value)"></label>
       <label>Q (m³/h)<input type="number" step="5" min="1" value="${b.q}" oninput="updSupply(${i},'q',this.value)"></label>
       <label>direction<select ${pl} onchange="updSupply(${i},'dir',this.value)">${Object.keys(DIR_LABEL).map(t=>`<option value="${t}" ${b.dir===t?'selected':''}>${DIR_LABEL[t]}</option>`).join('')}</select></label>
@@ -467,11 +631,11 @@ function renderExtracts(){
     const dimLbl=e.type==='rond'?'Ø (m)':(e.type==='carre'||e.type==='grille')?'côté (m)':'longueur (m)';
     const fente=e.type==='fente'?`<label>ép. fente (mm)<input type="number" step="1" min="1" value="${Math.round((e.dim2||0.02)*1000)}" oninput="updExtract(${i},'dim2mm',this.value)"></label>`:'';
     return `<div class="row"><span class="tag">Reprise ${i+1}</span>
-    <label>montage<select onchange="updExtract(${i},'montage',this.value)">${Object.keys(MONT_LABEL).map(t=>`<option value="${t}" ${(e.montage||'plafond')===t?'selected':''}>${MONT_LABEL[t]}</option>`).join('')}</select></label>
+    <label>montage<select onchange="updExtract(${i},'montage',this.value)">${montageOptions(e.montage||'plafond')}</select></label>
     <label>forme<select onchange="updExtract(${i},'type',this.value)">${Object.keys(TYPE_LABEL).map(t=>`<option value="${t}" ${(e.type||'grille')===t?'selected':''}>${TYPE_LABEL[t]}</option>`).join('')}</select></label>
     <label>${dimLbl}<input type="number" step="0.01" min="0.01" value="${e.dim||0.4}" oninput="updExtract(${i},'dim',this.value)"></label>
     ${fente}
-    <label>X (m)<input type="number" step="0.1" value="${e.x}" oninput="updExtract(${i},'x',this.value)"></label>
+    <label>X (m)<input type="number" step="0.1" value="${e.x}" oninput="updExtract(${i},'x',this.value)" title="${(e.montage||'').indexOf('edge')===0?'position le long du bord (m)':''}"></label>
     <label>Y (m)<input type="number" step="0.1" value="${e.y}" oninput="updExtract(${i},'y',this.value)"></label>
     <label>Z (m)<input type="number" step="0.1" value="${e.z==null?r.H:e.z}" oninput="updExtract(${i},'z',this.value)"></label>
     <label>Q (m³/h, vide = auto)<input type="number" step="5" min="0" placeholder="auto" value="${e.q||''}" oninput="updExtract(${i},'q',this.value)"></label>
@@ -515,29 +679,67 @@ function renderAffParams(){
     <label class="f"><span>Tranche z = <b id="lblTranche">${fmt(s.tranche,1)}</b> m</span><input type="range" id="tranche" min="0.1" max="${mx}" step="0.05" value="${Math.min(s.tranche,mx)}" style="width:160px" oninput="changerTranche(this.value)"></label>`;
 }
 function updRoom(k,v){marquerPerime();const x=parseFloat(v);if(!isNaN(x))state.room[k]=x;saveLocal();renderAffParams();refreshViews();}
-function updSupply(i,k,v){marquerPerime();const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();saveLocal();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);b.dim2=isNaN(x)?null:x/1000;saveLocal();refreshViews();return;}if(k==='v0'||k==='portee'){const x=parseFloat(v);b[k]=(isNaN(x)||x<=0)?null:x;renderSupplies();saveLocal();refreshViews();return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;saveLocal();refreshViews();}
+function updSupply(i,k,v){marquerPerime();const b=state.supplies[i];if(k==='type'||k==='montage'){b[k]=v;if(k==='type'&&!b.dim)b.dim=v==='fente'?1:0.25;renderSupplies();saveLocal();refreshViews();return;}if(k==='cloison'){b.cloison=parseInt(v)||0;renderSupplies();saveLocal();refreshViews();return;}if(k==='face'){b.face=v;renderSupplies();saveLocal();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);b.dim2=isNaN(x)?null:x/1000;saveLocal();refreshViews();return;}if(k==='v0'||k==='portee'){const x=parseFloat(v);b[k]=(isNaN(x)||x<=0)?null:x;renderSupplies();saveLocal();refreshViews();return;}const x=parseFloat(v);b[k]=isNaN(x)?v:x;saveLocal();refreshViews();}
 function delSupply(i){marquerPerime();state.supplies.splice(i,1);renderSupplies();saveLocal();refreshViews();}
-function copierSupply(i){marquerPerime();const b=JSON.parse(JSON.stringify(state.supplies[i]));b.id=uid++;b.x=clamp((b.x||0)+0.3,0,state.room.L);b.y=clamp((b.y||0)+0.3,0,state.room.l);state.supplies.push(b);renderSupplies();saveLocal();refreshViews();}
-function addSupply(){marquerPerime();state.supplies.push({id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:state.room.L/2,y:state.room.l/2,z:state.room.H,q:60,dir:'vert',azi:0,ori:0,v0:null,portee:null});renderSupplies();saveLocal();refreshViews();}
-function updExtract(i,k,v){marquerPerime();const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();saveLocal();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);e.dim2=isNaN(x)?null:x/1000;saveLocal();refreshViews();return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;saveLocal();refreshViews();return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;saveLocal();refreshViews();}
+function copierSupply(i){marquerPerime();const b=JSON.parse(JSON.stringify(state.supplies[i]));b.id=uid++;const bb=bboxOf(polyOf(state.room));b.x=clamp((b.x||0)+0.3,bb.x0,bb.x1);b.y=clamp((b.y||0)+0.3,bb.y0,bb.y1);state.supplies.push(b);renderSupplies();saveLocal();refreshViews();}
+function addSupply(){marquerPerime();const bb=bboxOf(polyOf(state.room));state.supplies.push({id:uid++,montage:'plafond',type:'rond',dim:0.25,dim2:null,x:(bb.x0+bb.x1)/2,y:(bb.y0+bb.y1)/2,z:state.room.H,q:60,dir:'vert',azi:0,ori:0,v0:null,portee:null,cloison:0,face:'x+'});renderSupplies();saveLocal();refreshViews();}
+function updExtract(i,k,v){marquerPerime();const e=state.extracts[i];if(k==='type'||k==='montage'){e[k]=v;if(k==='type'&&!e.dim)e.dim=v==='fente'?1:0.4;renderExtracts();saveLocal();refreshViews();return;}if(k==='cloison'){e.cloison=parseInt(v)||0;saveLocal();refreshViews();return;}if(k==='face'){e.face=v;saveLocal();refreshViews();return;}if(k==='dim2mm'){const x=parseFloat(v);e.dim2=isNaN(x)?null:x/1000;saveLocal();refreshViews();return;}if(k==='q'){const x=parseFloat(v);e.q=isNaN(x)?0:x;saveLocal();refreshViews();return;}const x=parseFloat(v);if(!isNaN(x))e[k]=x;saveLocal();refreshViews();}
 function delExtract(i){marquerPerime();state.extracts.splice(i,1);renderExtracts();saveLocal();refreshViews();}
-function copierExtract(i){marquerPerime();const e=JSON.parse(JSON.stringify(state.extracts[i]));e.id=uid++;e.x=clamp((e.x||0)+0.3,0,state.room.L);e.y=clamp((e.y||0)+0.3,0,state.room.l);state.extracts.push(e);renderExtracts();saveLocal();refreshViews();}
-function addExtract(){marquerPerime();state.extracts.push({id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:0.3,y:state.room.l-0.3,z:state.room.H,q:0});renderExtracts();saveLocal();refreshViews();}
+function copierExtract(i){marquerPerime();const e=JSON.parse(JSON.stringify(state.extracts[i]));e.id=uid++;const bb=bboxOf(polyOf(state.room));e.x=clamp((e.x||0)+0.3,bb.x0,bb.x1);e.y=clamp((e.y||0)+0.3,bb.y0,bb.y1);state.extracts.push(e);renderExtracts();saveLocal();refreshViews();}
+function addExtract(){marquerPerime();const bb=bboxOf(polyOf(state.room));state.extracts.push({id:uid++,montage:'plafond',type:'grille',dim:0.4,dim2:null,x:bb.x0+0.3,y:bb.y0+0.3,z:state.room.H,q:0,cloison:0,face:'x+'});renderExtracts();saveLocal();refreshViews();}
 function updMeuble(i,k,v){marquerPerime();const m=state.mobilier[i];if(k==='nom'){m.nom=v;saveLocal();return;}const x=parseFloat(v);if(!isNaN(x))m[k]=x;saveLocal();refreshViews();}
 function presetMeuble(i,p){marquerPerime();const m=state.mobilier[i];m.preset=p;const pr=PRESETS[p];if(pr){m.L=pr.L;m.l=pr.l;m.H=pr.H;}renderMobilier();saveLocal();refreshViews();}
 function delMeuble(i){marquerPerime();state.mobilier.splice(i,1);renderMobilier();saveLocal();refreshViews();}
-function copierMeuble(i){marquerPerime();const m=JSON.parse(JSON.stringify(state.mobilier[i]));m.id=uid++;m.x=clamp((m.x||0)+0.3,0,Math.max(0,state.room.L-m.L));m.y=clamp((m.y||0)+0.3,0,Math.max(0,state.room.l-m.l));m.nom=(m.nom||'Élément')+' (copie)';state.mobilier.push(m);renderMobilier();saveLocal();refreshViews();}
-function addMeuble(){marquerPerime();const n=state.mobilier.length+1;state.mobilier.push({id:uid++,preset:'Table',nom:'Élément '+n,x:state.room.L/2,y:state.room.l/2,z:0,L:1.6,l:0.8,H:0.75});renderMobilier();saveLocal();refreshViews();}
+function copierMeuble(i){marquerPerime();const m=JSON.parse(JSON.stringify(state.mobilier[i]));m.id=uid++;const bb=bboxOf(polyOf(state.room));m.x=clamp((m.x||0)+0.3,bb.x0,Math.max(bb.x0,bb.x1-m.L));m.y=clamp((m.y||0)+0.3,bb.y0,Math.max(bb.y0,bb.y1-m.l));m.nom=(m.nom||'Élément')+' (copie)';state.mobilier.push(m);renderMobilier();saveLocal();refreshViews();}
+function addMeuble(){marquerPerime();const n=state.mobilier.length+1;const bb=bboxOf(polyOf(state.room));state.mobilier.push({id:uid++,preset:'Table',nom:'Élément '+n,x:(bb.x0+bb.x1)/2,y:(bb.y0+bb.y1)/2,z:0,L:1.6,l:0.8,H:0.75});renderMobilier();saveLocal();refreshViews();}
 function updSim(k,v){if(k==='grandeur'){state.sim[k]=v;saveLocal();drawHeatmap();return;}const x=parseFloat(v);if(!isNaN(x))state.sim[k]=x;if(k!=='tranche')marquerPerime();saveLocal();}
 function changerTranche(v){state.sim.tranche=parseFloat(v);$('#lblTranche').textContent=fmt(parseFloat(v),1);saveLocal();drawHeatmap();}
-/* Normalise les états chargés (scénarios anciens sans fenêtres / Text / vTerm / v0 / portee) */
-function normalizeState(){
-  if(!Array.isArray(state.windows))state.windows=[];
-  if(state.room.Text==null)state.room.Text=state.room.Tamb;
-  if(state.sim.vTerm==null)state.sim.vTerm=0.25;
-  for(const b of state.supplies){if(b.v0==null)b.v0=null;if(b.portee==null)b.portee=null;}
+/* Normalise les états chargés (scénarios anciens : sans fenêtres / Text / vTerm / v0 / portee,
+   montages 'murX0'... -> bords du rectangle, fenêtres 'mur' -> edge, pas de polygone) */
+const LEGACY_EDGE={murY0:0,murX1:1,murY1:2,murX0:3};
+function normalizePiece(p){
+  if(!p.room)return;
+  if(!Array.isArray(p.windows))p.windows=[];
+  if(p.room.Text==null)p.room.Text=p.room.Tamb;
+  if(p.room.poly){if(p.room.poly.length<3)p.room.poly=null;else ensureCCW(p.room.poly);}
+  if(!p.sim)p.sim=JSON.parse(JSON.stringify(DEFAULT_PIECE.sim));
+  if(p.sim.vTerm==null)p.sim.vTerm=0.25;
+  for(const w of p.windows){
+    if(w.edge==null){w.edge=(w.mur&&LEGACY_EDGE[w.mur]!=null)?LEGACY_EDGE[w.mur]:0;}
+    delete w.mur;
+  }
+  for(const b of [...(p.supplies||[]),...(p.extracts||[])]){
+    if(b.v0==null)b.v0=null;if(b.portee==null)b.portee=null;
+    if(b.cloison==null)b.cloison=0;if(!b.face)b.face='x+';
+    if(b.montage&&LEGACY_EDGE[b.montage]!=null){const k=LEGACY_EDGE[b.montage];b.montage='edge'+k;
+      if(b.montage==='edge0'||b.montage==='edge2'){/* pos le long de x */}else{const t=b.x;b.x=b.y;b.y=t;}
+    }
+  }
 }
-function renderAll(){normalizeState();renderPiece();renderWindows();renderSupplies();renderExtracts();renderMobilier();renderSimParams();renderAffParams();updateStats();}
+function normalizeAll(){for(const p of study.pieces)normalizePiece(p);normalizePiece(state);}
+function normalizeState(){normalizeAll();}
+
+/* ================= Gestion des pièces (multi-pièces) ================= */
+function renderPieces(){
+  $('#piecesBar').innerHTML=`<select onchange="switchPiece(this.value)">${study.pieces.map((p,i)=>`<option value="${i}" ${i===study.active?'selected':''}>${esc(p.nom||('Pièce '+(i+1)))}${p._run?' ✓':''}</option>`).join('')}</select>
+    <input type="text" id="nomPiece" value="${esc(state.nom||'')}" style="width:100px" title="Nom de la pièce active">
+    <button class="mini" onclick="renamePiece()">Renommer</button>
+    <button class="mini" onclick="addPiece()">+ Pièce</button>
+    <button class="mini" onclick="delPiece()" ${study.pieces.length<=1?'disabled':''}>✕</button>`;
+}
+function switchPiece(i){
+  i=clamp(parseInt(i)||0,0,study.pieces.length-1);
+  study.active=i;state=study.pieces[i];
+  normalizePiece(state);
+  sim=state._run?state._run.sim:null;
+  if(sim)Object.assign(G,state._run.G);else Object.assign(G,{N:0});
+  reinitUI();renderAll();saveLocal();refreshViews();renderPieces();
+}
+function addPiece(){const p=defaultPiece('Pièce '+(study.pieces.length+1));study.pieces.push(p);switchPiece(study.pieces.length-1);saveLocal();}
+function delPiece(){if(study.pieces.length<=1)return;if(!confirm('Supprimer la pièce « '+(state.nom||'')+' » ?'))return;study.pieces.splice(study.active,1);switchPiece(Math.max(0,study.active-1));saveLocal();}
+function renamePiece(){const v=($('#nomPiece').value||'').trim();if(v){state.nom=v;saveLocal();renderPieces();}}
+
+function renderAll(){normalizeAll();renderPieces();renderPiece();renderWindows();renderSupplies();renderExtracts();renderMobilier();renderSimParams();renderAffParams();updateStats();}
 let _rvPending=false;
 function refreshViews(){if(_rvPending)return;_rvPending=true;requestAnimationFrame(()=>{_rvPending=false;drawHeatmap();render3D();});}
 function setView(v){
@@ -557,14 +759,35 @@ function fzi(i,j,k){return i+G.nx*(j+G.ny*k);}
 
 function buildGrid(){
   const r=state.room,res=state.sim.res;
-  const nx=Math.max(4,Math.round(r.L/res)),ny=Math.max(4,Math.round(r.l/res)),nz=Math.max(3,Math.round(r.H/res));
+  const poly=ensureCCW(polyOf(r).map(p=>[p[0],p[1]]));
+  const bb=bboxOf(poly);
+  const nx=Math.max(4,Math.ceil(bb.x1/res)),ny=Math.max(4,Math.ceil(bb.y1/res)),nz=Math.max(3,Math.round(r.H/res));
   G.nx=nx;G.ny=ny;G.nz=nz;G.res=res;G.N=nx*ny*nz;
+  G.poly=poly;G.area=polyArea(poly);G.bbox=bb;
   G.solid=new Uint8Array(G.N);
+  G.wall=new Uint8Array(G.N); /* cellules solides = "dehors du polygone" (vrai mur) vs mobilier */
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const c=idx(i,j,k);
+    if(!pointInPoly((i+0.5)*res,(j+0.5)*res,poly)){G.solid[c]=1;G.wall[c]=1;}
+  }
   for(const m of state.mobilier){
     const i0=Math.max(0,Math.floor(m.x/res)),i1=Math.min(nx-1,Math.floor((m.x+m.L)/res));
     const j0=Math.max(0,Math.floor(m.y/res)),j1=Math.min(ny-1,Math.floor((m.y+m.l)/res));
     const k0=Math.max(0,Math.floor(m.z/res)),k1=Math.min(nz-1,Math.floor((m.z+m.H)/res));
-    for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)G.solid[idx(i,j,k)]=1;
+    for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)if(!G.wall[idx(i,j,k)])G.solid[idx(i,j,k)]=1;
+  }
+  /* faces de bord du domaine réellement sur un mur (dehors du polygone ou limite grille) */
+  G.bndFx0=new Uint8Array(G.N);G.bndFx1=new Uint8Array(G.N);
+  G.bndFy0=new Uint8Array(G.N);G.bndFy1=new Uint8Array(G.N);
+  G.bndFz0=new Uint8Array(G.N);G.bndFz1=new Uint8Array(G.N);
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const c=idx(i,j,k);if(G.solid[c])continue;
+    if(i===0||G.wall[idx(i-1,j,k)])G.bndFx0[c]=1;
+    if(i===nx-1||G.wall[idx(i+1,j,k)])G.bndFx1[c]=1;
+    if(j===0||G.wall[idx(i,j-1,k)])G.bndFy0[c]=1;
+    if(j===ny-1||G.wall[idx(i,j+1,k)])G.bndFy1[c]=1;
+    if(k===0)G.bndFz0[c]=1;
+    if(k===nz-1)G.bndFz1[c]=1;
   }
   G.fx=new Float64Array((nx+1)*ny*nz);
   G.fy=new Float64Array(nx*(ny+1)*nz);
@@ -574,27 +797,40 @@ function buildGrid(){
        extérieure donne sur une fenêtre (masques winF*) + coefficient U (winU),
        et mémorise les cellules fluides adjacentes (sources d'infiltration). --- */
 function buildWindowData(){
-  const r=state.room,res=G.res,{nx,ny,nz}=G;
+  const res=G.res,{nx,ny,nz}=G;
+  const poly=G.poly||polyOf(state.room);
+
   G.winU=new Float64Array(G.N);
   G.winFx0=new Uint8Array(G.N);G.winFx1=new Uint8Array(G.N);
   G.winFy0=new Uint8Array(G.N);G.winFy1=new Uint8Array(G.N);
   G.windows=[];
   for(const w of (state.windows||[])){
+    const k=clamp(w.edge==null?0:w.edge,0,poly.length-1);
+    const e=edgeOf(poly,k);
     const a0=w.pos||0,a1=a0+(w.larg||0),z0=w.z==null?0:w.z,z1=z0+(w.haut||0);
     const u=(w.u==null||w.u<=0)?2.0:w.u;
-    const inWin=(a,z)=>a>=a0-1e-9&&a<=a1+1e-9&&z>=z0-1e-9&&z<=z1+1e-9;
     const cells=[];
-    if(w.mur==='murX0'){for(let k=0;k<nz;k++)for(let j=0;j<ny;j++){const c=idx(0,j,k);if(G.solid[c])continue;if(inWin((j+0.5)*res,(k+0.5)*res)){cells.push(c);G.winFx0[c]=1;G.winU[c]=u;}}}
-    else if(w.mur==='murX1'){for(let k=0;k<nz;k++)for(let j=0;j<ny;j++){const c=idx(nx-1,j,k);if(G.solid[c])continue;if(inWin((j+0.5)*res,(k+0.5)*res)){cells.push(c);G.winFx1[c]=1;G.winU[c]=u;}}}
-    else if(w.mur==='murY0'){for(let k=0;k<nz;k++)for(let i=0;i<nx;i++){const c=idx(i,0,k);if(G.solid[c])continue;if(inWin((i+0.5)*res,(k+0.5)*res)){cells.push(c);G.winFy0[c]=1;G.winU[c]=u;}}}
-    else if(w.mur==='murY1'){for(let k=0;k<nz;k++)for(let i=0;i<nx;i++){const c=idx(i,ny-1,k);if(G.solid[c])continue;if(inWin((i+0.5)*res,(k+0.5)*res)){cells.push(c);G.winFy1[c]=1;G.winU[c]=u;}}}
-    G.windows.push({w:w,cells:cells});
+    /* on balaie le bord par pas de res/2 ; chaque échantillon tombe dans une cellule de bord */
+    for(let t=Math.max(0,a0);t<=Math.min(e.len,a1)+1e-9;t+=res/2){
+      const px=e.A[0]+e.dx*t,py=e.A[1]+e.dy*t;
+      const i=clamp(Math.floor(px/res),0,nx-1),j=clamp(Math.floor(py/res),0,ny-1);
+      for(let kk=0;kk<nz;kk++){
+        const z=(kk+0.5)*res;
+        if(z<z0-1e-9||z>z1+1e-9)continue;
+        const c=idx(i,j,kk);if(G.solid[c])continue;
+        if(Math.abs(e.out[0])>=Math.abs(e.out[1])){if(e.out[0]>0){G.winFx1[c]=1;}else{G.winFx0[c]=1;}}
+        else{if(e.out[1]>0){G.winFy1[c]=1;}else{G.winFy0[c]=1;}}
+        G.winU[c]=u;
+        if(cells.indexOf(c)<0)cells.push(c);
+      }
+    }
+    G.windows.push({w:w,cells:cells,edge:k});
   }
 }
 function spreadCells(p,b){
   const res=G.res,out=[];
   const ax=slotAxes(b);
-  const nrm=b.montage==='murX0'?[1,0,0]:b.montage==='murX1'?[-1,0,0]:b.montage==='murY0'?[0,1,0]:b.montage==='murY1'?[0,-1,0]:[0,0,1];
+  const nrm=(b.montage&&b.montage!=='plafond')?dirOf(b,state.room):[0,0,1];
   const ci=clamp(Math.floor(p[0]/res),0,G.nx-1),cj=clamp(Math.floor(p[1]/res),0,G.ny-1),ck=clamp(Math.floor(p[2]/res),0,G.nz-1);
   const R=Math.max(2,Math.ceil(Math.max(b.dim,b.dim2||0)/res)+1);
   const halfL=b.dim/2+res/2, halfW=((b.type==='fente'&&b.dim2)?b.dim2:b.dim)/2+res/2;
@@ -671,7 +907,7 @@ function computeSources(){
     const q=(wd.w.q||0)/3600;
     if(q>0&&wd.cells.length)wd.cells.forEach(c=>{G.S[c]+=q/wd.cells.length/vol;G.dirMask[c]=1;G.dirValT[c]=Text;});
   }
-  G.Qtot=Qtot;G.Qinf=Qinf;G.volRoom=r.L*r.l*r.H;
+  G.Qtot=Qtot;G.Qinf=Qinf;G.volRoom=(G.area!=null?G.area:polyArea(polyOf(r)))*r.H;
   G.tauN=G.volRoom/Math.max(Qout,1e-9);
   G.ACH=3600/G.tauN;
 }
@@ -760,14 +996,19 @@ function addJets(){
     const isSlot=b.type==='fente';
     const dim=b.type==='rond'?b.dim:(isSlot?(b.dim2||0.02):b.dim);
     const sCore=sCoreOf(b,v0),spread=0.10,step=res/2; /* noyau calibré sur la portée fabricant si renseignée */
-    const maxS=Math.sqrt(r.L*r.L+r.l*r.l+r.H*r.H)+2*res;
-    // Détection paroi Coanda
+    const bb=bboxOf(polyOf(r));
+    const maxS=Math.hypot(bb.x1-bb.x0,bb.y1-bb.y0,r.H)+2*res;
+    // Détection paroi Coanda : bords du polygone (normale sortante) + sol/plafond
     const p0=s.p;
-    const walls=[
-      {n:[ 1,0,0],dist:p0[0]},{n:[-1,0,0],dist:r.L-p0[0]},
-      {n:[0, 1,0],dist:p0[1]},{n:[0,-1,0],dist:r.l-p0[1]},
-      {n:[0,0, 1],dist:p0[2]},{n:[0,0,-1],dist:r.H-p0[2]}
-    ];
+    const poly=polyOf(r);
+    const walls=[];
+    for(let ei=0;ei<poly.length;ei++){
+      const e=edgeOf(poly,ei);
+      const t=clamp((p0[0]-e.A[0])*e.dx+(p0[1]-e.A[1])*e.dy,0,e.len);
+      const d=Math.hypot(p0[0]-(e.A[0]+e.dx*t),p0[1]-(e.A[1]+e.dy*t));
+      walls.push({n:[-e.out[0],-e.out[1],0],dist:d});
+    }
+    walls.push({n:[0,0,1],dist:p0[2]},{n:[0,0,-1],dist:r.H-p0[2]});
     let coanda=null;
     for(const w of walls){
       if(w.dist<2*res && Math.abs(d0[0]*w.n[0]+d0[1]*w.n[1]+d0[2]*w.n[2])<0.34){
@@ -799,7 +1040,7 @@ function addJets(){
       const p0=[s.p[0]+ax.long[0]*t,s.p[1]+ax.long[1]*t,s.p[2]+ax.long[2]*t];
       for(let sd=step;sd<maxS;sd+=step){
       const x=p0[0]+d[0]*sd,y=p0[1]+d[1]*sd,z=p0[2]+d[2]*sd;
-      if(x<0||y<0||z<0||x>r.L||y>r.l||z>r.H)break;
+      if(x<bb.x0||y<bb.y0||z<0||x>bb.x1||y>bb.y1||z>r.H)break;
       const vc=sd<=sCore?v0:(isSlot?v0*Math.sqrt(sCore/sd):v0*sCore/sd);
       if(coanda&&vc<coanda.until)coanda=null; // le jet se détache
       const rad=Math.max(dim/2,0.02)+sd*spread;
@@ -888,14 +1129,14 @@ function cellVel(){
   }
 }
 function distParoi(){
-  const {nx,ny,nz}=G,res=G.res,r=state.room;
+  const {nx,ny,nz}=G,res=G.res;
   const d=new Float64Array(G.N);
   const q=[];
+  const big=(nx+ny+nz)*res;
   for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
     const c=idx(i,j,k);
-    const x=(i+0.5)*res,y=(j+0.5)*res,z=(k+0.5)*res;
     if(G.solid[c]){d[c]=0;q.push(c);}
-    else d[c]=Math.min(x,r.L-x,y,r.l-y,z,r.H-z);
+    else d[c]=big;
   }
   const inq=new Uint8Array(G.N);
   for(const c of q)inq[c]=1;
@@ -918,3 +1159,939 @@ function computeNuT(){
   for(let c=0;c<G.N;c++){
     if(G.solid[c])continue;
     const v=Math.hypot(G.vc[3*c],G.vc[3*c+1],G.vc[3*c+2]);
+    G.nuT[c]=s.nu0+s.cnu*v*G.dist[c];
+  }
+}
+/* --- Transport scalaire permanent upwind : div(v*a) - a*S*res - div(D grad a)*res = rhs*res
+       mode 'age' : rhs=1, Dirichlet=0 ; mode 'T' : rhs=flux paroissaux, Dirichlet=Tsouf
+       Fix Dirichlet : face adjacente à une cellule Dirichlet -> a_up=dirVal et D_face=0 --- */
+function solveTransport(mode,maxIt,tol){
+  const {nx,ny,nz}=G,res=G.res;
+  const a=new Float64Array(G.N);
+  const dir=G.dirMask,ext=G.extMask,D=G.nuT;
+  const isT=mode==='T';
+  if(isT){a.fill(state.room.Tamb);for(let c=0;c<G.N;c++)if(dir[c])a[c]=G.dirValT[c];}
+  else a.fill(0);
+  const hWall=2.0,rhocp=1206;
+  const rb=rbLists();
+  let okCount=0;
+  for(let it=0;it<maxIt;it++){
+    let dmax=0;
+    for(const [i,j,k] of rb.red){
+      const c=idx(i,j,k);
+      if(dir[c])continue;
+      dmax=Math.max(dmax,transportStep(a,c,i,j,k,res,dir,ext,D,isT,hWall,rhocp));
+    }
+    for(const [i,j,k] of rb.black){
+      const c=idx(i,j,k);
+      if(dir[c])continue;
+      dmax=Math.max(dmax,transportStep(a,c,i,j,k,res,dir,ext,D,isT,hWall,rhocp));
+    }
+    if(it%200===199){
+      G.lastConv={stage:convStage,it:it+1,res:dmax};
+      if(dmax<tol){if(++okCount>=5)break;}
+      else okCount=0;
+    }
+  }
+  return a;
+}
+function transportStep(a,c,i,j,k,res,dir,ext,D,isT,hWall,rhocp){
+  const {nx,ny,nz}=G;
+  {
+      const c=idx(i,j,k);
+      let num=0,den=0;
+
+      let out=-G.fx[fxi(i,j,k)];
+      if(i>0){const nb=idx(i-1,j,k);if(!G.solid[nb]){if(out>0)den+=out;else if(out<0)num+=(-out)*(dir[nb]?(isT?G.dirValT[nb]:0):a[nb]);if(!dir[nb]&&!ext[nb]){const Df=0.5*(D[c]+D[nb]);den+=Df/res;num+=Df*a[nb]/res;}}}
+      out=G.fx[fxi(i+1,j,k)];
+      if(i<nx-1){const nb=idx(i+1,j,k);if(!G.solid[nb]){if(out>0)den+=out;else if(out<0)num+=(-out)*(dir[nb]?(isT?G.dirValT[nb]:0):a[nb]);if(!dir[nb]&&!ext[nb]){const Df=0.5*(D[c]+D[nb]);den+=Df/res;num+=Df*a[nb]/res;}}}
+      out=-G.fy[fyi(i,j,k)];
+      if(j>0){const nb=idx(i,j-1,k);if(!G.solid[nb]){if(out>0)den+=out;else if(out<0)num+=(-out)*(dir[nb]?(isT?G.dirValT[nb]:0):a[nb]);if(!dir[nb]&&!ext[nb]){const Df=0.5*(D[c]+D[nb]);den+=Df/res;num+=Df*a[nb]/res;}}}
+      out=G.fy[fyi(i,j+1,k)];
+      if(j<ny-1){const nb=idx(i,j+1,k);if(!G.solid[nb]){if(out>0)den+=out;else if(out<0)num+=(-out)*(dir[nb]?(isT?G.dirValT[nb]:0):a[nb]);if(!dir[nb]&&!ext[nb]){const Df=0.5*(D[c]+D[nb]);den+=Df/res;num+=Df*a[nb]/res;}}}
+      out=-G.fz[fzi(i,j,k)];
+      if(k>0){const nb=idx(i,j,k-1);if(!G.solid[nb]){if(out>0)den+=out;else if(out<0)num+=(-out)*(dir[nb]?(isT?G.dirValT[nb]:0):a[nb]);if(!dir[nb]&&!ext[nb]){const Df=0.5*(D[c]+D[nb]);den+=Df/res;num+=Df*a[nb]/res;}}}
+      out=G.fz[fzi(i,j,k+1)];
+      if(k<nz-1){const nb=idx(i,j,k+1);if(!G.solid[nb]){if(out>0)den+=out;else if(out<0)num+=(-out)*(dir[nb]?(isT?G.dirValT[nb]:0):a[nb]);if(!dir[nb]&&!ext[nb]){const Df=0.5*(D[c]+D[nb]);den+=Df/res;num+=Df*a[nb]/res;}}}
+      if(isT){
+        /* Parois du domaine (bords du polygone / sol / plafond) : échange avec Tamb (hWall),
+           sauf face de fenêtre -> échange avec Text à U (W/m²K) */
+        const Text=(state.room.Text==null?state.room.Tamb:state.room.Text);
+        const wall=(bnd,win)=>(bnd)?((win&&G[win]&&G[win][c])?{h:G.winU[c],T:Text}:{h:hWall,T:state.room.Tamb}):null;
+        let f;
+        if((f=wall(G.bndFx0[c],'winFx0'))){num+=f.h*f.T/rhocp;den+=f.h/rhocp;}
+        if((f=wall(G.bndFx1[c],'winFx1'))){num+=f.h*f.T/rhocp;den+=f.h/rhocp;}
+        if((f=wall(G.bndFy0[c],'winFy0'))){num+=f.h*f.T/rhocp;den+=f.h/rhocp;}
+        if((f=wall(G.bndFy1[c],'winFy1'))){num+=f.h*f.T/rhocp;den+=f.h/rhocp;}
+        if(G.bndFz0[c]){num+=hWall*state.room.Tamb/rhocp;den+=hWall/rhocp;}
+        if(G.bndFz1[c]){num+=hWall*state.room.Tamb/rhocp;den+=hWall/rhocp;}
+      }else{
+        num+=res;
+      }
+      den-=G.S[c]*res;
+      if(den>1e-12){const an=num/den;const dd=Math.abs(an-a[c]);a[c]=an;return dd;}
+      return 0;
+  }
+}
+/* --- Flottabilité faible (Boussinesq) : correction verticale, puis re-projection --- */
+function addBuoyancy(temp){
+  const {nx,ny,nz}=G;
+  const g=9.81,beta=1/293,tauB=0.5;
+  const wb=new Float64Array(G.N);
+  for(let c=0;c<G.N;c++)if(!G.solid[c])wb[c]=-g*beta*(temp[c]-state.room.Tamb)*tauB;
+  for(let k=0;k<=nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    if(k===0||k===nz){G.fz[fzi(i,j,k)]=0;continue;}
+    const a=idx(i,j,k-1),b=idx(i,j,k);
+    if(G.solid[a]||G.solid[b]){G.fz[fzi(i,j,k)]=0;continue;}
+    G.fz[fzi(i,j,k)]+=0.5*(wb[a]+wb[b]);
+  }
+}
+function checkConnectivity(){
+  const seen=new Uint8Array(G.N),q=[];
+  for(const s of G.supplyCells)for(const c of s.cells)if(!G.solid[c]&&!seen[c]){seen[c]=1;q.push(c);}
+  let head=0;
+  while(head<q.length){
+    const c=q[head++];
+    const i=c%G.nx,j=Math.floor(c/G.nx)%G.ny,k=Math.floor(c/(G.nx*G.ny));
+    const nbs=[[i-1,j,k],[i+1,j,k],[i,j-1,k],[i,j+1,k],[i,j,k-1],[i,j,k+1]];
+    for(const [a,b,d] of nbs){
+      if(a<0||b<0||d<0||a>=G.nx||b>=G.ny||d>=G.nz)continue;
+      const n=idx(a,b,d);
+      if(!seen[n]&&!G.solid[n]){seen[n]=1;q.push(n);}
+    }
+  }
+  for(const e of G.extractCells)for(const c of e.cells)if(!seen[c])return false;
+  return true;
+}
+function computeResults(){
+  const r=state.room,res=G.res,zocc=state.sim.zocc;
+  const dv=divOfFaces();
+  let volF=0,ageSum=0,deadVol=0,okVol=0,divRes=0;
+  let ozN=0,ozAge=0,ozV=0,ozT=0,ozOk=0;
+  for(let k=0;k<G.nz;k++)for(let j=0;j<G.ny;j++)for(let i=0;i<G.nx;i++){
+    const c=idx(i,j,k);if(G.solid[c])continue;
+    const z=(k+0.5)*res,V=res*res*res;
+    volF+=V;ageSum+=sim.age[c]*V;
+    if(sim.age[c]>2*G.tauN)deadVol+=V;
+    if(sim.age[c]<=G.tauN)okVol+=V;
+    const cc=Math.abs(dv[c]-G.S[c]);if(cc>divRes)divRes=cc;
+    if(z<=zocc){ozN++;ozAge+=sim.age[c];ozV+=Math.hypot(G.vc[3*c],G.vc[3*c+1],G.vc[3*c+2]);ozT+=sim.temp[c];if(sim.age[c]<=G.tauN)ozOk++;}
+  }
+  const ageMoy=ageSum/Math.max(volF,1e-9);
+  /* Déperditions par les fenêtres (W) :
+     - conduction vitrage : Σ U·(T_cellule − Text)·S sur les faces fenêtre SANS infiltration
+       (les cellules avec infiltration sont en Dirichlet à Text, leur perte est comptée en depInf)
+     - infiltration : Qinf·ρcp·(Tamb − Text), ρcp = 1206 J/m³K */
+  let depWin=0,depInf=0;
+  if(G.winU){
+    const Text=(state.room.Text==null?state.room.Tamb:state.room.Text);
+    for(let c=0;c<G.N;c++)if(G.winU[c]>0&&!G.solid[c]&&!G.dirMask[c])depWin+=G.winU[c]*(sim.temp[c]-Text)*res*res;
+    depInf=(G.Qinf||0)*1206*(r.Tamb-Text);
+  }
+  let qAge=0,qTot=0;
+  for(const e of G.extractCells)for(const c of e.cells){const q=Math.abs(G.S[c])*res*res*res;qAge+=q*sim.age[c];qTot+=q;}
+  sim.res={
+    tauN:G.tauN,ACH:G.ACH,ageMoy:ageMoy,ERE:G.tauN/Math.max(ageMoy,1e-9),
+    pctOk:100*okVol/Math.max(volF,1e-9),pctDead:100*deadVol/Math.max(volF,1e-9),
+    divRes:divRes,bilanAge:qTot>0?qAge/qTot:0,depWin:depWin,depInf:depInf,
+    oz:{n:ozN,age:ozN?ozAge/ozN:0,v:ozN?ozV/ozN:0,T:ozN?ozT/ozN:0,pctOk:ozN?100*ozOk/ozN:0}
+  };
+}
+function velAt(p){
+  const res=G.res;
+  const i=clamp(Math.floor(p[0]/res),0,G.nx-1),j=clamp(Math.floor(p[1]/res),0,G.ny-1),k=clamp(Math.floor(p[2]/res),0,G.nz-1);
+  const c=idx(i,j,k);
+  return [G.vc[3*c],G.vc[3*c+1],G.vc[3*c+2]];
+}
+function buildStreamlines(){
+  const r=state.room,res=G.res,bb=bboxOf(polyOf(r));
+  sim.streams=[];
+  const n=state.sim.nstream;
+  for(const s of G.supplyCells){
+    const b=s.b,d=dirOf(b,r),ax=slotAxes(b);
+    for(let m=0;m<n;m++){
+      const t=(m+0.5)/n*2-1;
+      const off=t*Math.max(b.dim,0.1)*0.8;
+      let cur=[s.p[0]+ax.long[0]*off+d[0]*res*0.5,s.p[1]+ax.long[1]*off+d[1]*res*0.5,s.p[2]+ax.long[2]*off+d[2]*res*0.5];
+      const pts=[cur.slice()];
+      for(let step=0;step<3000;step++){
+        const v=velAt(cur);
+        const sp=Math.hypot(v[0],v[1],v[2]);
+        if(sp<1e-4)break;
+        const dt=res/(2*sp);
+        const mid=[cur[0]+v[0]*dt/2,cur[1]+v[1]*dt/2,cur[2]+v[2]*dt/2];
+        const vm=velAt(mid);
+        cur=[cur[0]+vm[0]*dt,cur[1]+vm[1]*dt,cur[2]+vm[2]*dt];
+        if(cur[0]<bb.x0||cur[1]<bb.y0||cur[2]<0||cur[0]>bb.x1||cur[1]>bb.y1||cur[2]>r.H)break;
+        const ci=clamp(Math.floor(cur[0]/res),0,G.nx-1),cj=clamp(Math.floor(cur[1]/res),0,G.ny-1),ck=clamp(Math.floor(cur[2]/res),0,G.nz-1);
+        const c=idx(ci,cj,ck);
+        if(G.solid[c]||G.extMask[c])break;
+        pts.push(cur.slice());
+        if(pts.length>800)break;
+      }
+      if(pts.length>2)sim.streams.push(pts);
+    }
+  }
+}
+/* --- Orchestration --- */
+let solving=false,paused=false,stopFlag=false,_worker=null;
+
+/* Construit le code du Web Worker inline (Blob) à partir des fonctions du moteur
+   sérialisées via .toString() — zéro duplication de code, compatible file://. */
+function buildWorkerCode(){
+  const fns=[
+    mulberry32,clamp,fmt,esc,
+    polyOf,polySignedArea,ensureCCW,polyArea,bboxOf,pointInPoly,edgeOf,nearestOnPoly,
+    effAire,v0Of,v0Eff,sCoreOf,dirVec,posOf,slotAxes,dirOf,
+    idx,fxi,fyi,fzi,
+    buildGrid,buildWindowData,spreadCells,nearestFluid,computeSources,
+    gsPoisson,lapRes,rbLists,solvePoissonField,vFromPhi,
+    addJets,divOfFaces,project,cellVel,distParoi,computeNuT,
+    solveTransport,transportStep,addBuoyancy,checkConnectivity,
+    computeResults,velAt,buildStreamlines
+  ];
+  const src=fns.map(f=>f.toString()).join('\n');
+  return '"use strict";\n'
+    +'let state=null;const G={};let sim=null;let convStage="";let RNG=mulberry32(42);let stopFlag=false;let paused=false;\n'
+    +src+'\n'
+    +'self.onmessage=async function(e){\n'
+    +'  const d=e.data;\n'
+    +'  if(d.cmd==="stop"){stopFlag=true;return;}\n'
+    +'  if(d.cmd==="pause"){paused=true;return;}\n'
+    +'  if(d.cmd==="resume"){paused=false;return;}\n'
+    +'  if(d.cmd!=="solve")return;\n'
+    +'  try{\n'
+    +'    state=d.state;\n'
+    +'    RNG=mulberry32((state.sim.seed|0)||42);\n'
+    +'    const simP=state.sim;\n'
+    +'    const post=(o)=>self.postMessage(o);\n'
+    +'    const checkPause=async()=>{while(paused&&!stopFlag){await new Promise(r=>setTimeout(r,120));}if(stopFlag)throw new Error("Résolution interrompue.");};\n'
+    +'    const convLines=[];\n'
+    +'    const stage=(label,fn)=>{convStage=label;fn();if(G.lastConv)convLines.push(label+" : "+G.lastConv.it+" it, résidu "+G.lastConv.res.toExponential(1));};\n'
+    +'    post({type:"progress",f:0.02,msg:"Construction de la grille…"});\n'
+    +'    buildGrid();buildWindowData();computeSources();\n'
+    +'    await checkPause();post({type:"progress",f:0.08,msg:"Champ potentiel (Poisson)…"});\n'
+    +'    let phi;stage("potentiel",()=>{phi=solvePoissonField(G.S,false,simP.maxIt,1e-7);});\n'
+    +'    vFromPhi(phi);\n'
+    +'    await checkPause();post({type:"progress",f:0.20,msg:"Jets analytiques…"});\n'
+    +'    addJets();\n'
+    +'    await checkPause();post({type:"progress",f:0.32,msg:"Projection de Helmholtz…"});\n'
+    +'    stage("projection",()=>{project(simP.maxIt,1e-7);});\n'
+    +'    cellVel();distParoi();computeNuT();\n'
+    +'    await checkPause();post({type:"progress",f:0.45,msg:"Âge de l’air (permanent)…"});\n'
+    +'    let age1;stage("âge",()=>{age1=solveTransport("age",simP.maxIt,1e-7);});\n'
+    +'    await checkPause();post({type:"progress",f:0.58,msg:"Température (permanent)…"});\n'
+    +'    let temp1;stage("température",()=>{temp1=solveTransport("T",simP.maxIt,1e-7);});\n'
+    +'    await checkPause();post({type:"progress",f:0.70,msg:"Couplage flottabilité faible (passe 2)…"});\n'
+    +'    addBuoyancy(temp1);\n'
+    +'    stage("projection 2",()=>{project(simP.maxIt,1e-7);});\n'
+    +'    cellVel();computeNuT();\n'
+    +'    await checkPause();post({type:"progress",f:0.82,msg:"Âge de l’air (passe 2)…"});\n'
+    +'    let age2;stage("âge 2",()=>{age2=solveTransport("age",simP.maxIt,1e-7);});\n'
+    +'    await checkPause();post({type:"progress",f:0.92,msg:"Température (passe 2)…"});\n'
+    +'    let temp2;stage("température 2",()=>{temp2=solveTransport("T",simP.maxIt,1e-7);});\n'
+    +'    sim={age:age2,temp:temp2,streams:[],conv:convLines.slice(),warn:(G.warn||[]).slice()};\n'
+    +'    computeResults();\n'
+    +'    buildStreamlines();\n'
+    +'    sim.connected=checkConnectivity();\n'
+    +'    if(!sim.connected)sim.warn.push("ATTENTION : aucun chemin d’air des soufflages vers les reprises (volume scindé ?) — le résultat n’est pas physique.");\n'
+    +'    post({type:"progress",f:1,msg:"Terminé."});\n'
+    +'    post({type:"done",\n'
+    +'      G:{nx:G.nx,ny:G.ny,nz:G.nz,res:G.res,N:G.N,tauN:G.tauN,ACH:G.ACH,volRoom:G.volRoom,Qtot:G.Qtot,\n'
+    +'         solid:G.solid,S:G.S,vc:G.vc,dirMask:G.dirMask,extMask:G.extMask},\n'
+    +'      sim:{age:sim.age,temp:sim.temp,res:sim.res,streams:sim.streams,conv:sim.conv,warn:sim.warn,connected:sim.connected}\n'
+    +'    });\n'
+    +'  }catch(err){\n'
+    +'    post({type:"error",message:err.message||String(err)});\n'
+    +'  }\n'
+    +'};\n';
+}
+
+function setP(f,t){$('#progressBar>div').style.width=Math.round(f*100)+'%';$('#progress').textContent=t;}
+/* Lance le worker sur UNE pièce et renvoie {G, sim} — ne touche pas à l'état global */
+function solvePiece(piece){
+  return new Promise((resolve,reject)=>{
+    const code=buildWorkerCode();
+    const blob=new Blob([code],{type:'application/javascript'});
+    const url=URL.createObjectURL(blob);
+    _worker=new Worker(url);
+    URL.revokeObjectURL(url);
+    _worker.onmessage=(e)=>{
+      const d=e.data;
+      if(d.type==='progress'){setP(d.f,d.msg);}
+      else if(d.type==='done'){const w=_worker;_worker=null;w.terminate();resolve(d);}
+      else if(d.type==='error'){const w=_worker;_worker=null;w.terminate();reject(new Error(d.message));}
+    };
+    _worker.onerror=(e)=>{const w=_worker;_worker=null;w.terminate();reject(new Error(e.message||'Erreur Worker'));};
+    _worker.postMessage({cmd:'solve',state:JSON.parse(JSON.stringify(piece))});
+  });
+}
+function finSolveUI(){
+  if(_worker){_worker.terminate();_worker=null;}
+  solving=false;paused=false;
+  $('#btnLancer').disabled=false;$('#btnTout').disabled=false;$('#btnPause').disabled=true;$('#btnPause').textContent='Pause';
+}
+async function resoudre(){
+  if(solving)return;
+  if(!state.extracts.length){alert('Ajoutez au moins une reprise d’air (extraction) avant de résoudre.');return;}
+  if(state.supplies.reduce((s,b)=>s+(b.q||0),0)<=0){alert('Le débit total de soufflage est nul.');return;}
+  solving=true;stopFlag=false;paused=false;
+  $('#btnLancer').disabled=true;$('#btnTout').disabled=true;$('#btnPause').disabled=false;$('#btnPause').textContent='Pause';
+  try{
+    const result=await solvePiece(state);
+    Object.assign(G,result.G);
+    sim=result.sim;
+    state._run={G:result.G,sim:result.sim};
+    state._simLite=simLiteOf(state._run);
+    const convLines=sim.conv||[];
+    let msg='Champ permanent résolu (convergé) — résidu de divergence max : '+sim.res.divRes.toExponential(1)+'. Convergence : '+convLines.join(' · ')+'.';
+    if(sim.warn.length)msg+=' Avertissements : '+sim.warn.join(' ');
+    setP(1,msg);
+    ajouterHistorique();
+    $('#btnRapport').disabled=false;$('#btnPng').disabled=false;$('#btnCsv').disabled=false;
+    updateStats();drawHeatmap();render3D();renderPieces();saveLocal();
+  }catch(e){
+    if(e.message!=='Résolution interrompue.'){alert('Erreur : '+e.message);console.error(e);}
+    $('#progress').textContent=e.message;
+  }
+  finSolveUI();
+}
+/* Résout toutes les pièces de l'étude, une par une (résultats conservés par pièce) */
+async function resoudreTout(){
+  if(solving)return;
+  solving=true;stopFlag=false;paused=false;
+  $('#btnLancer').disabled=true;$('#btnTout').disabled=true;$('#btnPause').disabled=false;$('#btnPause').textContent='Pause';
+  const n=study.pieces.length;
+  let ok=0;
+  for(let i=0;i<n;i++){
+    const p=study.pieces[i];
+    if(!p.extracts.length||p.supplies.reduce((s,b)=>s+(b.q||0),0)<=0){setP(i/n,'Pièce « '+(p.nom||('Pièce '+(i+1)))+' » ignorée (reprise manquante ou débit de soufflage nul).');continue;}
+    setP(i/n,'Résolution de « '+(p.nom||('Pièce '+(i+1)))+' » ('+(i+1)+'/'+n+')…');
+    try{
+      const result=await solvePiece(p);
+      p._run={G:result.G,sim:result.sim};
+      p._simLite=simLiteOf(p._run);
+      ok++;
+    }catch(e){
+      if(e.message==='Résolution interrompue.'){setP(i/n,'Interrompu.');break;}
+      alert('Pièce « '+(p.nom||('Pièce '+(i+1)))+' » : '+e.message);
+    }
+    renderPieces();
+  }
+  setP(1,ok+'/'+n+' pièce'+(n>1?'s':'')+' résolue'+(ok>1?'s':'')+'.');
+  sim=state._run?state._run.sim:null;
+  if(sim)Object.assign(G,state._run.G);else Object.assign(G,{N:0});
+  if(sim&&sim.age){ajouterHistorique();$('#btnRapport').disabled=false;$('#btnPng').disabled=false;$('#btnCsv').disabled=false;}
+  updateStats();drawHeatmap();render3D();renderPieces();saveLocal();
+  finSolveUI();
+}
+function pauseReprendre(){
+  if(!solving||!_worker)return;
+  paused=!paused;
+  _worker.postMessage({cmd:paused?'pause':'resume'});
+  $('#btnPause').textContent=paused?'Reprendre':'Pause';
+}
+function reinitUI(){
+  $('#btnLancer').disabled=false;$('#btnTout').disabled=false;$('#btnPause').disabled=true;$('#btnPause').textContent='Pause';
+  $('#btnRapport').disabled=!(sim&&sim.age);$('#btnPng').disabled=!(sim&&sim.age);$('#btnCsv').disabled=!(sim&&sim.age);
+  $('#progressBar>div').style.width=sim?'100%':'0';
+  $('#progress').textContent=sim?'Résultats chargés — cliquez sur « Résoudre le champ permanent » pour relancer un calcul.':'Champ non résolu — cliquez sur « Résoudre le champ permanent ».';
+}
+function reinit(){
+  stopFlag=true;
+  if(_worker){_worker.postMessage({cmd:'stop'});_worker.terminate();_worker=null;}
+  solving=false;paused=false;
+  sim=null;state._run=null;state._simLite=null;Object.assign(G,{N:0});
+  reinitUI();updateStats();drawHeatmap();render3D();renderPieces();saveLocal();
+}
+function updateStats(){
+  const el=$('#stats');
+  if(!sim||!sim.res){
+    el.innerHTML=['τ nominal (V/Q)','Renouvellement (ACH)','Âge moyen de l’air','ERE','Vol. balayage ≥ 100 %','Vol. zones mortes (âge>2τ)','Vitesse moy. zone occ.','Temp. moy. zone occ.','Âge aux reprises (bilan)','Déperditions fenêtres','Résidu div max'].map(s=>`<div class="stat"><b>—</b><span>${s}</span></div>`).join('');
+    return;
+  }
+  const R=sim.res,oz=R.oz;
+  el.innerHTML=[
+    [fmt(R.tauN/60,1)+' min','τ nominal (V/Q)'],
+    [fmt(R.ACH,1)+' vol/h','Renouvellement (ACH)'],
+    [fmt(R.ageMoy/60,1)+' min','Âge moyen de l’air'],
+    [fmt(R.ERE*100,0)+' %','ERE = τN / âge moyen'],
+    [fmt(R.pctOk,0)+' %','Vol. balayage ≥ 100 %'],
+    [fmt(R.pctDead,0)+' %','Vol. zones mortes (âge>2τ)'],
+    [fmt(oz.v,2)+' m/s','Vitesse moy. zone occ.'],
+    [fmt(oz.T,1)+' °C','Temp. moy. zone occ.'],
+    [fmt(R.bilanAge/60,1)+' min','Âge aux reprises (bilan)'],
+    [fmt((R.depWin||0)+(R.depInf||0),0)+' W','Déperditions fenêtres (U·ΔT + infiltr.)'],
+    [R.divRes.toExponential(1),'Résidu div max']
+  ].map(p=>`<div class="stat"><b>${p[0]}</b><span>${p[1]}</span></div>`).join('');
+}
+
+/* ================= Visualisation 2D (heat map) ================= */
+/* Dessine une ouverture (soufflage/reprise) à sa forme réelle :
+   fente = rectangle allongé orienté selon l'axe long, rond = cercle, carré/grille = carré. */
+function dessinerOuverture(ctx,b,px,py,s,couleur,txtCol,label){
+  ctx.save();
+  ctx.translate(px,py);
+  if(b.type==='fente'){
+    const ax=slotAxes(b);
+    const hl=Math.hypot(ax.long[0],ax.long[1]);
+    const ang=hl>1e-6?Math.atan2(ax.long[1],ax.long[0]):0;
+    ctx.rotate(ang);
+    const L=Math.max(b.dim*s,8), W=Math.max((b.dim2||0.02)*s,3);
+    ctx.fillStyle=couleur;
+    ctx.fillRect(-L/2,-W/2,L,W);
+    ctx.strokeStyle=txtCol;ctx.lineWidth=1;ctx.strokeRect(-L/2,-W/2,L,W);
+    ctx.fillStyle=txtCol;ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(label,0,0.5);
+  }else if(b.type==='rond'){
+    ctx.fillStyle=couleur;ctx.beginPath();ctx.arc(0,0,6,0,7);ctx.fill();
+    ctx.strokeStyle=txtCol;ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,0,6,0,7);ctx.stroke();
+    ctx.fillStyle=txtCol;ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(label,0,0.5);
+  }else{
+    ctx.fillStyle=couleur;ctx.fillRect(-6,-6,12,12);
+    ctx.strokeStyle=txtCol;ctx.lineWidth=1;ctx.strokeRect(-6,-6,12,12);
+    ctx.fillStyle=txtCol;ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(label,0,0.5);
+  }
+  ctx.restore();
+}
+function grandeurVal(c){
+  if(!sim||!sim.age)return null;
+  const g=state.sim.grandeur;
+  if(g==='balayage')return sim.age[c]>1e-9?G.tauN/sim.age[c]*100:0;
+  if(g==='age')return sim.age[c]/60;
+  if(g==='temp')return sim.temp[c];
+  return Math.hypot(G.vc[3*c],G.vc[3*c+1],G.vc[3*c+2]);
+}
+/* Échelle de température : min/max réellement résolus du champ (pour étaler toute la
+   plage de couleurs), sinon Tsouf/Tamb/Text si pas encore résolu. Cachée par run (sim). */
+function tempScale(){
+  if(G._ts&&G._tsFor===sim)return G._ts;
+  let lo,hi;
+  if(sim&&sim.temp&&G.N){
+    let mn=1e9,mx=-1e9;
+    for(let c=0;c<G.N;c++){if(G.solid[c])continue;const t=sim.temp[c];if(t<mn)mn=t;if(t>mx)mx=t;}
+    lo=mn;hi=mx;
+  }else{
+    const Te=(state.room.Text==null?state.room.Tamb:state.room.Text);
+    lo=Math.min(state.room.Tsouf,state.room.Tamb,Te);hi=Math.max(state.room.Tsouf,state.room.Tamb,Te);
+  }
+  if(!(hi-lo>0.2)){const m=(lo+hi)/2;lo=m-0.1;hi=m+0.1;}
+  G._ts={lo:lo-0.2,hi:hi+0.2};G._tsFor=sim;
+  return G._ts;
+}
+/* t normalisé 0..1 pour la carte de couleur (partagé CPU / GPU) */
+function tOf(g,v){
+  if(g==='balayage')return clamp(v/150,0,1);
+  if(g==='age')return clamp(v/Math.max(sim&&G.tauN?2*G.tauN/60:10,1),0,1);
+  if(g==='temp'){const ts=tempScale();return clamp((v-ts.lo)/(ts.hi-ts.lo),0,1);}
+  return clamp(v/0.5,0,1);
+}
+/* Échelle commune à toutes les grandeurs : BLEU = froid/petit/faible, ROUGE = chaud/grand/élevé */
+const RAMP=[[37,99,235],[34,211,238],[52,211,153],[250,204,21],[239,68,68]];
+function colorScale(g,v){
+  const t=tOf(g,v);
+  const x=t*(RAMP.length-1),i=Math.min(RAMP.length-2,Math.floor(x)),f=x-i;
+  const c=RAMP[i].map((a,k)=>Math.round(a+(RAMP[i+1][k]-a)*f));
+  return 'rgb('+c[0]+','+c[1]+','+c[2]+')';
+}
+function legendRange(g){
+  if(g==='balayage')return[0,150,' %'];
+  if(g==='age')return[0,Math.max(sim&&G.tauN?2*G.tauN/60:10,1),' min'];
+  if(g==='temp'){const ts=tempScale();return[ts.lo,ts.hi,' °C'];}
+  return[0,0.5,' m/s'];
+
+}
+/* ================= Rendu du champ : GPU (WebGL) avec repli CPU ================= */
+let GLR=null,GLRfailed=false;
+function glRenderer(cv){
+  if(GLR)return GLR;
+  if(GLRfailed)return null;
+  try{
+    const gl=cv.getContext('webgl',{antialias:false,preserveDrawingBuffer:true})||cv.getContext('experimental-webgl',{preserveDrawingBuffer:true});
+    if(!gl){GLRfailed=true;return null;}
+    const vs='attribute vec2 aPos;varying vec2 vUv;void main(){vUv=vec2(aPos.x*0.5+0.5,0.5-aPos.y*0.5);gl_Position=vec4(aPos,0.,1.);}';
+    const fs='precision mediump float;varying vec2 vUv;uniform sampler2D uTex;uniform vec2 uOrg;uniform vec2 uBase;uniform float uS,uRes,uW,uH;uniform vec2 uN;uniform float uNoSim;\n'
+      +'void main(){vec2 px=vUv*vec2(uW,uH);vec2 room=(px-uOrg)/uS+uBase;\n'
+      +'if(room.x<0.0||room.y<0.0||room.x>uN.x*uRes||room.y>uN.y*uRes){gl_FragColor=vec4(0.043,0.071,0.125,1.0);return;}\n'
+      +'vec2 cell=floor(room/uRes);vec2 uv=(cell+0.5)/uN;vec4 s=texture2D(uTex,uv);\n'
+      +'if(s.a<0.5){gl_FragColor=vec4(0.224,0.267,0.353,1.0);return;}\n'
+      +'if(uNoSim>0.5){gl_FragColor=vec4(0.078,0.114,0.169,1.0);return;}\n'
+      +'float t=s.r;vec3 c;\n'
+      +'if(t<0.25)c=mix(vec3(0.145,0.388,0.922),vec3(0.133,0.827,0.933),t/0.25);\n'
+      +'else if(t<0.5)c=mix(vec3(0.133,0.827,0.933),vec3(0.204,0.827,0.608),(t-0.25)/0.25);\n'
+      +'else if(t<0.75)c=mix(vec3(0.204,0.827,0.608),vec3(0.980,0.800,0.082),(t-0.5)/0.25);\n'
+      +'else c=mix(vec3(0.980,0.800,0.082),vec3(0.937,0.267,0.267),(t-0.75)/0.25);\n'
+      +'gl_FragColor=vec4(c,1.0);}';
+    function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+    const prog=gl.createProgram();
+    gl.attachShader(prog,sh(gl.VERTEX_SHADER,vs));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(prog);
+    if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,1,1,-1,-1,1,1,-1,1]),gl.STATIC_DRAW);
+    const loc=gl.getAttribLocation(prog,'aPos');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+    const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const U={};for(const n of ['uTex','uOrg','uBase','uS','uRes','uW','uH','uN','uNoSim'])U[n]=gl.getUniformLocation(prog,n);
+    gl.uniform1i(U.uTex,0);
+    GLR={gl:gl,prog:prog,tex:tex,U:U};
+    return GLR;
+  }catch(e){GLRfailed=true;return null;}
+}
+/* Layout commun 2D : G.view = {s,ox,oy,x0,y0,W,H} ; px(x)=ox+(x-x0)*s */
+function computeLayout(W,H){
+  const r=state.room,poly=polyOf(r),bb=bboxOf(poly);
+  const m=46,s=Math.min((W-2*m)/Math.max(bb.x1-bb.x0,0.1),(H-2*m)/Math.max(bb.y1-bb.y0,0.1));
+  const ox=m+(W-2*m-(bb.x1-bb.x0)*s)/2,oy=m+(H-2*m-(bb.y1-bb.y0)*s)/2;
+  G.view={s:s,ox:ox,oy:oy,x0:bb.x0,y0:bb.y0,W:W,H:H};
+  return G.view;
+}
+function trancheK(tranche){
+  const res=G.res||state.sim.res;
+  const nz=G.nz||Math.max(3,Math.round(state.room.H/res));
+  return clamp(Math.floor(tranche/res),0,nz-1);
+}
+function gridDims(){
+  const res=G.res||state.sim.res,bb=bboxOf(polyOf(state.room));
+  return{nx:G.nx||Math.max(4,Math.ceil(bb.x1/res)),ny:G.ny||Math.max(4,Math.ceil(bb.y1/res)),nz:G.nz||Math.max(3,Math.round(state.room.H/res)),res:res};
+}
+/* Champ sur le canvas GPU (WebGL) ; repli CPU (fillRect) si WebGL indisponible */
+function drawField(tranche){
+  const cv=$('#heatGL'),v=G.view||computeLayout(cv.width,cv.height);
+  const W=cv.width,H=cv.height,g=state.sim.grandeur;
+  const gd=gridDims(),nx=gd.nx,ny=gd.ny,k=trancheK(tranche);
+  const glr=glRenderer(cv);
+  if(glr){
+    const gl=glr.gl;
+    if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}
+    gl.viewport(0,0,W,H);
+    const data=new Uint8Array(nx*ny*4);
+    const noSim=!(sim&&sim.age);
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+      const q=(j*nx+i)*4;
+      const c=G.N?idx(i,j,k):i+nx*(j+ny*k);
+      if(G.N&&G.solid[c]){data[q+3]=0;continue;}
+      const val=noSim?0:grandeurVal(c);
+      data[q]=val==null?0:Math.round(clamp(tOf(g,val),0,1)*255);
+      data[q+3]=255;
+    }
+    gl.bindTexture(gl.TEXTURE_2D,glr.tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,nx,ny,0,gl.RGBA,gl.UNSIGNED_BYTE,data);
+    gl.useProgram(glr.prog);
+    gl.uniform2f(glr.U.uOrg,v.ox,v.oy);
+    gl.uniform2f(glr.U.uBase,v.x0,v.y0);
+    gl.uniform1f(glr.U.uS,v.s);gl.uniform1f(glr.U.uRes,gd.res);
+    gl.uniform1f(glr.U.uW,W);gl.uniform1f(glr.U.uH,H);
+    gl.uniform2f(glr.U.uN,nx,ny);
+    gl.uniform1f(glr.U.uNoSim,noSim?1:0);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+  }else{
+    const ctx=cv.getContext('2d');
+    drawFieldCPU(ctx,W,H,tranche,g);
+  }
+}
+/* Champ en CPU (repli WebGL + rendu offscreen pour le rapport) */
+function drawFieldCPU(ctx,W,H,tranche,g){
+  const v=G.view||computeLayout(W,H);
+  const gd=gridDims(),nx=gd.nx,ny=gd.ny,res=gd.res,k=trancheK(tranche);
+  ctx.fillStyle='#0b1220';ctx.fillRect(0,0,W,H);
+  const px=x=>v.ox+(x-v.x0)*v.s, py=y=>v.oy+(y-v.y0)*v.s;
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const c=G.N?idx(i,j,k):i+nx*(j+ny*k);
+    const x=px(i*res),y=py(j*res),w=res*v.s+0.6;
+    if(G.N&&G.solid[c])ctx.fillStyle='#39445a';
+    else{
+      const val=grandeurVal(c);
+      ctx.fillStyle=val==null?'#141d2b':colorScale(g,val);
+    }
+    ctx.fillRect(x,y,w,w);
+  }
+}
+/* Vue de dessus complète sur un canvas 2D (champ CPU + calques) — utilisée pour le rapport */
+function drawHeatmapTo(cv,tranche,g){
+  const W=cv.width,H=cv.height;
+  computeLayout(W,H);
+  drawFieldCPU(cv.getContext('2d'),W,H,tranche,g);
+  drawOverlay(cv.getContext('2d'),W,H,tranche,g);
+  return cv;
+}
+/* Calque 2D par-dessus le champ : plan (polygone), mobilier, fenêtres, bouches + débits, légende, édition du plan */
+function drawOverlay(ctx,W,H,tranche,g){
+  const v=G.view||computeLayout(W,H);
+  const r=state.room,poly=polyOf(r),bb=bboxOf(poly);
+  const px=x=>v.ox+(x-v.x0)*v.s, py=y=>v.oy+(y-v.y0)*v.s;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#5b6b80';ctx.lineWidth=2;ctx.beginPath();
+  poly.forEach((p,i)=>{const X=px(p[0]),Y=py(p[1]);if(i===0)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);});
+  ctx.closePath();ctx.stroke();
+  ctx.fillStyle='#9fb0c3';ctx.font='11px sans-serif';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  ctx.fillText(fmt(bb.x0,1)+','+fmt(bb.y0,1),px(bb.x0)-4,H-46);ctx.fillText(fmt(bb.x1-bb.x0,1)+' m',px(bb.x1)-24,py(bb.y1)+16);ctx.fillText(fmt(bb.y1-bb.y0,1)+' m',px(bb.x0)-36,py(bb.y0)+10);
+  if(editPlan&&r.poly){
+    for(let k=0;k<poly.length;k++){
+      const e=edgeOf(poly,k);
+      const mx=px((e.A[0]+e.B[0])/2),my=py((e.A[1]+e.B[1])/2);
+      ctx.fillStyle='#38bdf8';ctx.fillRect(mx-4,my-4,8,8);ctx.strokeStyle='#04121f';ctx.strokeRect(mx-4,my-4,8,8);
+      ctx.fillStyle='#fbbf24';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(fmt(e.len,2)+' m',mx+e.out[0]*16,my+e.out[1]*16);
+    }
+    poly.forEach((p,k)=>{
+      const X=px(p[0]),Y=py(p[1]);
+      ctx.beginPath();ctx.arc(X,Y,6,0,7);ctx.fillStyle='#fbbf24';ctx.fill();ctx.strokeStyle='#04121f';ctx.lineWidth=1;ctx.stroke();
+      ctx.fillStyle='#04121f';ctx.font='bold 8px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(String(k+1),X,Y+0.5);
+    });
+  }
+  state.mobilier.forEach((mb,i)=>{
+    const col=PALETTE[i%PALETTE.length];
+    ctx.fillStyle=col+'44';ctx.fillRect(px(mb.x),py(mb.y),mb.L*v.s,mb.l*v.s);
+    ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.strokeRect(px(mb.x),py(mb.y),mb.L*v.s,mb.l*v.s);
+    ctx.fillStyle=col;ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillText(mb.nom,px(mb.x)+3,py(mb.y)+12);
+  });
+  (state.windows||[]).forEach((w,i)=>{
+    const e=edgeOf(poly,clamp(w.edge==null?0:w.edge,0,poly.length-1));
+    const a0=w.pos||0,a1=a0+(w.larg||0);
+    const P0=[e.A[0]+e.dx*a0,e.A[1]+e.dy*a0],P1=[e.A[0]+e.dx*a1,e.A[1]+e.dy*a1];
+    ctx.strokeStyle='#fbbf24';ctx.lineWidth=5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(px(P0[0]),py(P0[1]));ctx.lineTo(px(P1[0]),py(P1[1]));ctx.stroke();
+    ctx.fillStyle='#fbbf24';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('F'+(i+1),px((P0[0]+P1[0])/2)+e.out[0]*10,py((P0[1]+P1[1])/2)+e.out[1]*10);
+  });
+  state.supplies.forEach((b,i)=>{
+    const p=posOf(b,r),d=dirOf(b,r);
+    const X=px(p[0]),Y=py(p[1]);
+    const hl=Math.hypot(d[0],d[1]);
+    ctx.strokeStyle='#38bdf8';ctx.lineWidth=2;
+    if(hl>1e-3){ctx.beginPath();ctx.moveTo(X,Y);ctx.lineTo(X+d[0]/hl*16,Y+d[1]/hl*16);ctx.stroke();}
+    dessinerOuverture(ctx,b,X,Y,v.s,'#38bdf8','#04121f','S'+(i+1));
+    ctx.fillStyle='#7dd3fc';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';
+    ctx.fillText(b.q+' m³/h',X+9,Y+8);
+  });
+  state.extracts.forEach((e2,i)=>{
+    const p=posOf(e2,r);
+    const X=px(p[0]),Y=py(p[1]);
+    dessinerOuverture(ctx,e2,X,Y,v.s,'#f87171','#2b0a0a','R'+(i+1));
+    ctx.fillStyle='#fca5a5';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='top';
+    ctx.fillText((e2.q>0?e2.q+' m³/h':'auto'),X+9,Y+8);
+  });
+  const [lo,hi,unit]=legendRange(g);
+  const lx=px(bb.x0),ly=H-24,lw=(bb.x1-bb.x0)*v.s;
+  for(let x=0;x<lw;x++){ctx.fillStyle=colorScale(g,lo+(hi-lo)*x/lw);ctx.fillRect(lx+x,ly,1,8);}
+  ctx.fillStyle='#9fb0c3';ctx.font='10px sans-serif';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  ctx.fillText(fmt(lo,1)+unit,lx,ly+20);ctx.textAlign='right';ctx.fillText(fmt(hi,1)+unit,lx+lw,ly+20);
+  ctx.textAlign='left';ctx.fillText('bleu = froid / petit',lx,ly-4);ctx.textAlign='right';ctx.fillText('rouge = chaud / grand',lx+lw,ly-4);
+}
+function drawHeatmap(){
+  const cv=$('#heatmap');
+  const W=cv.width,H=cv.height;
+  computeLayout(W,H);
+  drawField(state.sim.tranche);
+  drawOverlay(cv.getContext('2d'),W,H,state.sim.tranche,state.sim.grandeur);
+  $('#titre2d').textContent='Heat map — '+GRAND_LABEL[state.sim.grandeur]+' — tranche z = '+fmt(state.sim.tranche,1)+' m'+(editPlan?' — MODE ÉDITION DU PLAN (glisser sommets/milieux, double-clic cote ou sommet)':' — glisser-déposer bouches, reprises, mobilier'+(state.room.poly?' et sommets du plan':''));
+}
+/* PNG = champ GPU + calque 2D composés */
+function telechargerHeatmap(){
+  const W=960,H=700;
+  const out=document.createElement('canvas');out.width=W;out.height=H;
+  const ctx=out.getContext('2d');
+  computeLayout(W,H);
+  if(GLR){const glcv=$('#heatGL');if(glcv.width===W&&glcv.height===H)ctx.drawImage(glcv,0,0);else drawFieldCPU(ctx,W,H,state.sim.tranche,state.sim.grandeur);}
+  else drawFieldCPU(ctx,W,H,state.sim.tranche,state.sim.grandeur);
+  drawOverlay(ctx,W,H,state.sim.tranche,state.sim.grandeur);
+  const a=document.createElement('a');a.href=out.toDataURL('image/png');a.download='heatmap-balayage.png';a.click();
+}
+function exporterCSV(){
+  if(!sim||!sim.age)return;
+  const res=G.res,{nx,ny,nz}=G;
+  const lines=['x,y,z,age_s,balayage_pct,temp_C,vx,vy,vz,v_ms,solid'];
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const c=idx(i,j,k);
+    const x=((i+0.5)*res).toFixed(3),y=((j+0.5)*res).toFixed(3),z=((k+0.5)*res).toFixed(3);
+    if(G.solid[c]){lines.push(x+','+y+','+z+',,,,,,1');continue;}
+    const age=sim.age[c],bal=age>1e-9?G.tauN/age*100:0;
+    const vx=G.vc[3*c],vy=G.vc[3*c+1],vz=G.vc[3*c+2];
+    const v=Math.hypot(vx,vy,vz);
+    lines.push([x,y,z,age.toFixed(2),bal.toFixed(1),sim.temp[c].toFixed(2),vx.toFixed(4),vy.toFixed(4),vz.toFixed(4),v.toFixed(4),'0'].join(','));
+  }
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='champs-3d-balayage.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+/* ================= Visualisation 3D ================= */
+let cam={yaw:0.7,pitch:0.45,dist:14};
+/* Scène 3D commune (vue live + vue isométrique du rapport) : prisme du polygone, mobilier,
+   fenêtres sur les bords, lignes de courant, bouches. */
+function draw3DScene(ctx,w,h,camObj){
+  ctx.fillStyle='#0b1220';ctx.fillRect(0,0,w,h);
+  const r=state.room,poly=polyOf(r),bb=bboxOf(poly);
+  const cx=(bb.x0+bb.x1)/2,cy=(bb.y0+bb.y1)/2,cz=r.H/2;
+  const k=Math.min(w,h)/(camObj.dist*1.1);
+  function P(x,y,z){
+    const X=x-cx,Y=y-cy,Z=z-cz;
+    const cyw=Math.cos(camObj.yaw),syw=Math.sin(camObj.yaw);
+    const x1=X*cyw-Y*syw,y1=X*syw+Y*cyw,z1=Z;
+    const cp=Math.cos(camObj.pitch),sp=Math.sin(camObj.pitch);
+    const y2=y1*cp-z1*sp,z2=y1*sp+z1*cp;
+    const s=camObj.dist/Math.max(2,camObj.dist-y2);
+    return [w/2+x1*s*k,h/2-z2*s*k];
+  }
+  function polyEdges(z0,z1,col){
+    ctx.strokeStyle=col;ctx.lineWidth=1;ctx.beginPath();
+    poly.forEach((p,i)=>{const Q=P(p[0],p[1],z0);if(i===0)ctx.moveTo(Q[0],Q[1]);else ctx.lineTo(Q[0],Q[1]);});
+    ctx.closePath();ctx.stroke();
+    if(z1!==z0){
+      ctx.beginPath();
+      poly.forEach((p,i)=>{const Q=P(p[0],p[1],z1);if(i===0)ctx.moveTo(Q[0],Q[1]);else ctx.lineTo(Q[0],Q[1]);});
+      ctx.closePath();ctx.stroke();
+      poly.forEach(p=>{const A=P(p[0],p[1],z0),B=P(p[0],p[1],z1);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();});
+    }
+  }
+  const edges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  function box(c2,col){
+    ctx.strokeStyle=col;ctx.lineWidth=1;
+    for(const [a,b] of edges){const A=P(c2[a][0],c2[a][1],c2[a][2]),B=P(c2[b][0],c2[b][1],c2[b][2]);ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();}
+  }
+  polyEdges(0,r.H,'#3d4c63');
+  for(const m of state.mobilier)box([[m.x,m.y,m.z],[m.x+m.L,m.y,m.z],[m.x+m.L,m.y+m.l,m.z],[m.x,m.y+m.l,m.z],[m.x,m.y,m.z+m.H],[m.x+m.L,m.y,m.z+m.H],[m.x+m.L,m.y+m.l,m.z+m.H],[m.x,m.y+m.l,m.z+m.H]],'#5b6b80');
+  // Fenêtres : rectangles ambrés sur les bords verticaux du polygone
+  for(const w of (state.windows||[])){
+    const e=edgeOf(poly,clamp(w.edge==null?0:w.edge,0,poly.length-1));
+    const a0=w.pos||0,a1=a0+(w.larg||0),z0=w.z==null?0:w.z,z1=z0+(w.haut||0);
+    const c2=[[e.A[0]+e.dx*a0,e.A[1]+e.dy*a0,z0],[e.A[0]+e.dx*a1,e.A[1]+e.dy*a1,z0],[e.A[0]+e.dx*a1,e.A[1]+e.dy*a1,z1],[e.A[0]+e.dx*a0,e.A[1]+e.dy*a0,z1]];
+    const P0=P(c2[0][0],c2[0][1],c2[0][2]);
+    ctx.beginPath();ctx.moveTo(P0[0],P0[1]);
+    for(let q=1;q<4;q++){const Q=P(c2[q][0],c2[q][1],c2[q][2]);ctx.lineTo(Q[0],Q[1]);}
+    ctx.closePath();
+    ctx.fillStyle='rgba(251,191,36,0.30)';ctx.fill();
+    ctx.strokeStyle='#fbbf24';ctx.lineWidth=1.5;ctx.stroke();
+  }
+  if(sim&&sim.streams){
+    for(const pts of sim.streams){
+      ctx.strokeStyle='rgba(56,189,248,0.75)';ctx.lineWidth=1.4;ctx.beginPath();
+      let started=false;
+      for(const p of pts){const Q=P(p[0],p[1],p[2]);if(!started){ctx.moveTo(Q[0],Q[1]);started=true;}else ctx.lineTo(Q[0],Q[1]);}
+      ctx.stroke();
+    }
+  }
+  for(const b of state.supplies){
+    const p=posOf(b,r),Q=P(p[0],p[1],p[2]);
+    ctx.fillStyle='#38bdf8';
+    if(b.type==='fente'){
+      const ax=slotAxes(b),L2=b.dim/2;
+      const A=P(p[0]+ax.long[0]*L2,p[1]+ax.long[1]*L2,p[2]+ax.long[2]*L2);
+      const B=P(p[0]-ax.long[0]*L2,p[1]-ax.long[1]*L2,p[2]-ax.long[2]*L2);
+      ctx.strokeStyle='#38bdf8';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
+      ctx.beginPath();ctx.arc(Q[0],Q[1],3,0,7);ctx.fill();
+    }else{ctx.beginPath();ctx.arc(Q[0],Q[1],5,0,7);ctx.fill();}
+  }
+  for(const e of state.extracts){
+    const p=posOf(e,r),Q=P(p[0],p[1],p[2]);
+    ctx.fillStyle='#f87171';
+    if(e.type==='fente'){
+      const ax=slotAxes(e),L2=e.dim/2;
+      const A=P(p[0]+ax.long[0]*L2,p[1]+ax.long[1]*L2,p[2]+ax.long[2]*L2);
+      const B=P(p[0]-ax.long[0]*L2,p[1]-ax.long[1]*L2,p[2]-ax.long[2]*L2);
+      ctx.strokeStyle='#f87171';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
+      ctx.fillRect(Q[0]-3,Q[1]-3,6,6);
+    }else{ctx.fillRect(Q[0]-5,Q[1]-5,10,10);}
+  }
+}
+function render3D(){
+  const pane=$('#pane3d'),cv=$('#view3d');
+  if(pane.style.display==='none')return;
+  const w=pane.clientWidth||600,h=pane.clientHeight||400;
+  const dpr=window.devicePixelRatio||1;
+  cv.width=Math.max(50,w*dpr);cv.height=Math.max(50,h*dpr);
+  cv.style.width=w+'px';cv.style.height=h+'px';
+  const ctx=cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw3DScene(ctx,w,h,cam);
+}
+/* Vue isométrique (vraie projection iso : yaw=45°, pitch=atan(1/√2)) pour le rapport */
+function render3DIso(canvas){
+  const W=canvas.width,H=canvas.height;
+  const ctx=canvas.getContext('2d');
+  const r=state.room,bb=bboxOf(polyOf(r));
+  const isoCam={yaw:Math.PI/4,pitch:Math.atan(1/Math.SQRT2),dist:Math.max(bb.x1-bb.x0,bb.y1-bb.y0,r.H)*1.9};
+  draw3DScene(ctx,W,H,isoCam);
+  return canvas;
+}
+/* ================= Interactions souris ================= */
+function attach3D(){
+  const cv=$('#view3d');
+  let drag=false,lx=0,ly=0;
+  cv.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY;});
+  window.addEventListener('mouseup',()=>{drag=false;});
+  cv.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    cam.yaw+=(e.clientX-lx)*0.005;
+    cam.pitch=clamp(cam.pitch+(e.clientY-ly)*0.005,-1.4,1.4);
+    lx=e.clientX;ly=e.clientY;render3D();
+  });
+  cv.addEventListener('wheel',e=>{e.preventDefault();cam.dist=clamp(cam.dist*(1+e.deltaY*0.001),4,40);render3D();},{passive:false});
+}
+function attach2D(){
+  const cv=$('#heatmap');
+  let drag=null;
+  const toRoom=e=>{
+    const rect=cv.getBoundingClientRect();
+    if(!G.view)return null;
+    const px=(e.clientX-rect.left)*cv.width/rect.width,py=(e.clientY-rect.top)*cv.height/rect.height;
+    return [(px-G.view.ox)/G.view.s+G.view.x0,(py-G.view.oy)/G.view.s+G.view.y0];
+  };
+  const hitOuverture=(b,p,r)=>{
+    const q=posOf(b,r);
+    if(b.type==='fente'){
+      const ax=slotAxes(b);
+      const dx=p[0]-q[0],dy=p[1]-q[1];
+      const along=dx*ax.long[0]+dy*ax.long[1],across=dx*ax.wid[0]+dy*ax.wid[1];
+      return Math.abs(along)<=(b.dim||1)/2+0.1 && Math.abs(across)<=((b.dim2||0.02)/2+0.15);
+    }
+    return Math.hypot(p[0]-q[0],p[1]-q[1])<0.3;
+  };
+  cv.addEventListener('mousedown',e=>{
+    const p=toRoom(e);if(!p)return;
+    const r=state.room,poly=polyOf(r),bb=bboxOf(poly);
+    // mode édition du plan : sommets (déplacer), milieux de bord (insérer un sommet)
+    if(editPlan&&r.poly){
+      for(let k=0;k<poly.length;k++){if(Math.hypot(poly[k][0]-p[0],poly[k][1]-p[1])<0.3){drag={kind:'v',ref:poly,index:k};e.preventDefault();return;}}
+      for(let k=0;k<poly.length;k++){const ed=edgeOf(poly,k);const mx=(ed.A[0]+ed.B[0])/2,my=(ed.A[1]+ed.B[1])/2;if(Math.hypot(mx-p[0],my-p[1])<0.3){drag={kind:'i',index:k};e.preventDefault();return;}}
+    }
+    for(let i=state.supplies.length-1;i>=0;i--){const b=state.supplies[i];if(hitOuverture(b,p,r)){drag={kind:'s',ref:b};break;}}
+    if(!drag)for(let i=state.extracts.length-1;i>=0;i--){const ex=state.extracts[i];if(hitOuverture(ex,p,r)){drag={kind:'e',ref:ex};break;}}
+    if(!drag)for(let i=state.mobilier.length-1;i>=0;i--){const m=state.mobilier[i];if(p[0]>=m.x&&p[0]<=m.x+m.L&&p[1]>=m.y&&p[1]<=m.y+m.l){drag={kind:'m',ref:m,dx:p[0]-m.x,dy:p[1]-m.y};break;}}
+    if(!drag)for(let i=(state.windows||[]).length-1;i>=0;i--){
+      const w=state.windows[i],e2=edgeOf(poly,clamp(w.edge==null?0:w.edge,0,poly.length-1));
+      const t=clamp((p[0]-e2.A[0])*e2.dx+(p[1]-e2.A[1])*e2.dy,0,e2.len);
+      const qx=e2.A[0]+e2.dx*t,qy=e2.A[1]+e2.dy*t;
+      if(Math.hypot(p[0]-qx,p[1]-qy)<0.35&&t>=(w.pos||0)-0.15&&t<=(w.pos||0)+(w.larg||0)+0.15){drag={kind:'w',ref:w,edge:e2};break;}
+    }
+    if(drag)e.preventDefault();
+  });
+  cv.addEventListener('dblclick',e=>{
+    const p=toRoom(e);if(!p)return;
+    editPlanDblClick(p[0],p[1]);
+  });
+  cv.addEventListener('mousemove',e=>{
+    const p=toRoom(e);if(!p||!drag)return;
+    const r=state.room,poly=polyOf(r),bb=bboxOf(poly);
+    if(drag.kind==='v'){const q=clampToRoom(p[0],p[1]);drag.ref[drag.index]=[q[0],q[1]];afterPolyEditLight();}
+    else if(drag.kind==='i'){const ed=edgeOf(poly,drag.index);const t=clamp((p[0]-ed.A[0])*ed.dx+(p[1]-ed.A[1])*ed.dy,0,ed.len);const pt=[ed.A[0]+ed.dx*t,ed.A[1]+ed.dy*t];state.room.poly.splice(drag.index+1,0,pt);drag={kind:'v',ref:state.room.poly,index:drag.index+1};afterPolyEditLight();}
+    else if(drag.kind==='m'){drag.ref.x=clamp(p[0]-drag.dx,bb.x0,Math.max(bb.x0,bb.x1-drag.ref.L));drag.ref.y=clamp(p[1]-drag.dy,bb.y0,Math.max(bb.y0,bb.y1-drag.ref.l));}
+    else if(drag.kind==='w'){const w=drag.ref;const len=drag.edge.len;w.pos=clamp((p[0]-drag.edge.A[0])*drag.edge.dx+(p[1]-drag.edge.A[1])*drag.edge.dy-(w.larg||0)/2,0,Math.max(0,len-(w.larg||0)));}
+    else{const q=clampToRoom(p[0],p[1]);drag.ref.x=q[0];drag.ref.y=q[1];}
+    drawHeatmap();render3D();
+  });
+  window.addEventListener('mouseup',()=>{
+    if(!drag)return;
+    const wasPlan=(drag.kind==='v'||drag.kind==='i');
+    drag=null;
+    if(wasPlan){afterPolyEdit();}
+    renderSupplies();renderExtracts();renderMobilier();renderWindows();saveLocal();drawHeatmap();render3D();
+  });
+  // Tooltip au survol : valeur exacte de la cellule sous le curseur
+  const tip=document.createElement('div');
+  tip.style.cssText='position:fixed;pointer-events:none;background:rgba(11,34,55,.93);color:#e8eef6;border:1px solid #2c3a4f;border-radius:6px;padding:3px 8px;font-size:11px;display:none;z-index:40;white-space:nowrap';
+  document.body.appendChild(tip);
+  cv.addEventListener('mousemove',e=>{
+    if(drag){tip.style.display='none';return;}
+    const p=toRoom(e);
+    const bb2=bboxOf(polyOf(state.room));
+    if(!p||!sim||!sim.age||!G.N||p[0]<bb2.x0-0.01||p[1]<bb2.y0-0.01||p[0]>bb2.x1+0.01||p[1]>bb2.y1+0.01){tip.style.display='none';return;}
+
+    const res=G.res||state.sim.res;
+    const i=clamp(Math.floor(p[0]/res),0,G.nx-1),j=clamp(Math.floor(p[1]/res),0,G.ny-1);
+    const k=clamp(Math.floor(state.sim.tranche/res),0,G.nz-1);
+    const c=idx(i,j,k);
+    const g=state.sim.grandeur;
+    let txt;
+    if(G.solid[c])txt='obstacle';
+    else{
+      const v=grandeurVal(c);
+      txt=v==null?'—':fmt(v,g==='balayage'?0:2)+(g==='balayage'?' %':g==='age'?' min':g==='temp'?' °C':' m/s');
+    }
+    tip.textContent='(x='+fmt(p[0],2)+' ; y='+fmt(p[1],2)+' ; z='+fmt(state.sim.tranche,2)+' m) — '+GRAND_LABEL[g]+' = '+txt;
+    tip.style.display='block';
+    tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY+14)+'px';
+  });
+  cv.addEventListener('mouseleave',()=>{tip.style.display='none';});
+}
+/* Indique que la config a changé depuis la dernière résolution (la heat map affichée est périmée) */
+function marquerPerime(){
+  if(sim&&!solving){
+    const p=$('#progress');
+    if(p&&p.textContent.indexOf('⚠')!==0)p.textContent='⚠ Configuration modifiée depuis la dernière résolution — relancez « Résoudre le champ permanent » pour mettre à jour la heat map.';
+  }
+}
+/* ================= Rapport ================= */
+let rapportHTML='';
+function genererRapport(){
+  if(!sim||!sim.res)return;
+  const r=state.room,s=state.sim,R=sim.res;
+  const poly=polyOf(r),bb=bboxOf(poly),area=polyArea(poly);
+  // heat maps : une tranche tous les 0,5 m + la tranche courante si elle n'y est pas
+  const slices=[];for(let z=0.5;z<r.H;z+=0.5)slices.push(Math.round(z*100)/100);
+  if(slices.indexOf(s.tranche)<0)slices.push(s.tranche);slices.sort((a,b)=>a-b);
+  const imgs=slices.map(z=>{
+    const cv=document.createElement('canvas');cv.width=960;cv.height=700;
+    drawHeatmapTo(cv,z,s.grandeur);
+    return {z:z,src:cv.toDataURL('image/png')};
+  });
+  // vue 3D isométrique
+  const isoCv=document.createElement('canvas');isoCv.width=960;isoCv.height=620;
+  render3DIso(isoCv);
+  const isoImg=isoCv.toDataURL('image/png');
+  const rows=(t,arr)=>arr.map((b,i)=>`<tr><td>${t}${i+1}</td><td>${esc(montageLabel(b.montage))}${b.montage==='cloison'?' — '+esc((state.mobilier[b.cloison|0]||{}).nom||'')+' / '+esc(FACE_LABEL[b.face]||''):''}</td><td>${TYPE_LABEL[b.type]||b.type}</td><td>${b.dim}</td><td>${b.q}</td><td>${posOf(b,r).map(v=>fmt(v,2)).join(' / ')}</td></tr>`).join('');
+  const rowsS=arr=>arr.map((b,i)=>`<tr><td>S${i+1}</td><td>${esc(montageLabel(b.montage))}${b.montage==='cloison'?' — '+esc((state.mobilier[b.cloison|0]||{}).nom||'')+' / '+esc(FACE_LABEL[b.face]||''):''}</td><td>${TYPE_LABEL[b.type]||b.type}</td><td>${b.dim}</td><td>${b.q}</td><td>${b.v0?fmt(b.v0,2):'auto ('+fmt(v0Of(b),2)+')'}</td><td>${b.portee?fmt(b.portee,1)+' (fab.)':'auto ≈ '+fmt(porteeOf(b),1)}</td><td>${posOf(b,r).map(v=>fmt(v,2)).join(' / ')}</td></tr>`).join('');
+  // récap multi-pièces (métriques des pièces résolues)
+  const recap=study.pieces.length>1?'<h2>Étude multi-pièces — récap des pièces résolues</h2>'+(study.pieces.some(p=>p._simLite&&p._simLite.res)?'<table><tr><th>Pièce</th><th>τN (min)</th><th>ACH</th><th>Âge moy. (min)</th><th>ERE (%)</th><th>Vol. ≥ 100 % (%)</th><th>Zones mortes (%)</th><th>v zone occ. (m/s)</th><th>T zone occ. (°C)</th></tr>'+study.pieces.map(p=>{const R2=p._simLite&&p._simLite.res;if(!R2)return'<tr><td>'+esc(p.nom||'')+'</td><td colspan="8">non résolue</td></tr>';return '<tr><td>'+esc(p.nom||'')+'</td><td>'+fmt(R2.tauN/60,1)+'</td><td>'+fmt(R2.ACH,1)+'</td><td>'+fmt(R2.ageMoy/60,1)+'</td><td>'+fmt(R2.ERE*100,0)+'</td><td>'+fmt(R2.pctOk,0)+'</td><td>'+fmt(R2.pctDead,0)+'</td><td>'+fmt(R2.oz.v,2)+'</td><td>'+fmt(R2.oz.T,1)+'</td></tr>';}).join('')+'</table>':'<p>Une seule pièce résolue.</p>'):'';
+  rapportHTML='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rapport de simulation de balayage</title><style>body{font-family:Arial,sans-serif;font-size:13px;margin:24px;color:#111}h1{font-size:18px}h2{font-size:14px;border-bottom:1px solid #999;margin-top:18px;padding-bottom:3px}table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}img{max-width:100%;border:1px solid #999}.kpi{display:flex;gap:12px;flex-wrap:wrap}.kpi div{border:1px solid #bbb;padding:8px 12px;min-width:110px}.kpi b{display:block;font-size:16px}p{line-height:1.5}</style></head><body>'
+  +'<h1>Rapport de simulation de balayage de ventilation — '+esc(new Date().toLocaleString('fr-FR'))+'</h1>'
+  +'<h2>Pièce active : '+esc(state.nom||('Pièce '+(study.active+1)))+' — conditions</h2><p>Plan : '+(r.poly?'polygone à '+poly.length+' sommets':'rectangle')+' — emprise '+fmt(bb.x1-bb.x0,1)+' × '+fmt(bb.y1-bb.y0,1)+' m — aire '+fmt(area,1)+' m² — hauteur '+r.H+' m (V = '+fmt(area*r.H,1)+' m³) — T ambiante '+r.Tamb+' °C — T de soufflage '+r.Tsouf+' °C — <b>T extérieure '+fmt(r.Text==null?r.Tamb:r.Text,1)+' °C</b> — résolution de grille '+s.res+' m — seed '+s.seed+' — zone d’occupation z ≤ '+s.zocc+' m — vTerm (portée des jets) '+fmt(s.vTerm||0.25,2)+' m/s.</p>'
+  +recap
+  +'<h2>Fenêtres (bords du plan)</h2>'+(state.windows&&state.windows.length?'<table><tr><th></th><th>Bord</th><th>pos (m)</th><th>allège z (m)</th><th>larg × haut (m)</th><th>U (W/m²K)</th><th>Infil. (m³/h)</th></tr>'+state.windows.map((w,i)=>{const e=edgeOf(poly,clamp(w.edge==null?0:w.edge,0,poly.length-1));return '<tr><td>F'+(i+1)+'</td><td>Bord '+(clamp(w.edge==null?0:w.edge,0,poly.length-1)+1)+' ('+fmt(e.len,1)+' m)</td><td>'+fmt(w.pos,2)+'</td><td>'+fmt(w.z,2)+'</td><td>'+fmt(w.larg,2)+' × '+fmt(w.haut,2)+'</td><td>'+(w.u==null?2:w.u)+'</td><td>'+(w.q||0)+'</td></tr>';}).join('')+'</table>':'<p>Aucune fenêtre définie — les parois échangent avec T ambiante (h = 2 W/m²K).</p>')
+  +'<h2>Bouches de soufflage</h2><table><tr><th></th><th>Montage</th><th>Forme</th><th>Dim (m)</th><th>Q (m³/h)</th><th>v0 fab (m/s)</th><th>Portée fab (m)</th><th>Position x/y/z (m)</th></tr>'+rowsS(state.supplies)+'</table>'
+  +'<h2>Reprises d’air</h2><table><tr><th></th><th>Montage</th><th>Forme</th><th>Dim (m)</th><th>Q (m³/h)</th><th>Position x/y/z (m)</th></tr>'+rows('R',state.extracts)+'</table>'
+  +'<h2>Mobilier / obstacles / cloisons</h2><table><tr><th>Nom</th><th>x / y / z (m)</th><th>L × l × H (m)</th></tr>'+state.mobilier.map(m=>'<tr><td>'+esc(m.nom)+'</td><td>'+fmt(m.x,2)+' / '+fmt(m.y,2)+' / '+fmt(m.z,2)+'</td><td>'+m.L+' × '+m.l+' × '+m.H+'</td></tr>').join('')+'</table>'
+  +'<h2>Résultats (régime permanent)</h2><div class="kpi">'
+  +'<div><b>'+fmt(R.tauN/60,1)+' min</b>τ nominal V/Q</div>'
+  +'<div><b>'+fmt(R.ACH,1)+' vol/h</b>Renouvellement ACH</div>'
+  +'<div><b>'+fmt(R.ageMoy/60,1)+' min</b>Âge moyen de l’air</div>'
+  +'<div><b>'+fmt(R.ERE*100,0)+' %</b>ERE = τN / âge moyen</div>'
+  +'<div><b>'+fmt(R.pctOk,0)+' %</b>Volume balayage ≥ 100 %</div>'
+  +'<div><b>'+fmt(R.pctDead,0)+' %</b>Volume âge &gt; 2τN (zones mortes)</div>'
+  +'<div><b>'+fmt(R.oz.v,2)+' m/s</b>Vitesse moy. zone d’occupation</div>'
+  +'<div><b>'+fmt(R.oz.T,1)+' °C</b>Température moy. zone d’occupation</div>'
+  +'<div><b>'+fmt(R.oz.pctOk,0)+' %</b>Zone occ. balayage ≥ 100 %</div>'
+  +'<div><b>'+fmt(R.bilanAge/60,1)+' min</b>Âge aux reprises (bilan ≈ τN)</div>'
+  +'<div><b>'+fmt((R.depWin||0)+(R.depInf||0),0)+' W</b>Déperditions fenêtres (conduction '+fmt(R.depWin||0,0)+' W + infiltration '+fmt(R.depInf||0,0)+' W)</div>'
+  +'<div><b>'+R.divRes.toExponential(1)+'</b>Résidu max de ∇·v − S</div>'
+  +'</div>'
+  +'<h2>Convergence et avertissements</h2><p>Résolution en régime permanent par itération jusqu’à convergence : '+(sim.conv?esc(sim.conv.join(' · ')):'')+'. Résidu de divergence max : '+sim.res.divRes.toExponential(1)+'. Bilan aux reprises : '+fmt(sim.res.bilanAge/60,1)+' min (théorie : τN = '+fmt(sim.res.tauN/60,1)+' min).'+(sim.connected===false?' <b style="color:#c00">ATTENTION : aucun chemin d’air soufflage → reprise (volume scindé ?).</b>':'')+(sim.warn&&sim.warn.length?'<br>'+sim.warn.map(esc).join('<br>'):'')+'</p>'
+  +'<h2>Vue 3D isométrique — pièce, mobilier, fenêtres, bouches, lignes de courant</h2><img src="'+isoImg+'">'
+  +'<h2>Heat maps — '+GRAND_LABEL[s.grandeur]+' — une tranche tous les 0,5 m</h2>'
+  +imgs.map(o=>'<h3 style="font-size:12px;margin:10px 0 4px">Tranche z = '+fmt(o.z,2)+' m</h3><img src="'+o.src+'">').join('')
+  +'<h2>Méthodologie et limites</h2><p>Modèle eulérien en régime permanent sur grille 3D (les cellules hors du polygone de la pièce sont solides) : écoulement potentiel (sources aux soufflages, puits aux reprises, parois sans pénétration) + jets analytiques (1/x rond, 1/√x fente, expansion conique gaussienne ; v0 et portée calibrées sur les données fabricant si renseignées, sinon v0 = Q/(0,65·section) et noyau K·d, K = 6,2), puis projection de Helmholtz garantissant ∇·v = S et v·n = 0 aux parois. Âge de l’air et température résolus en permanent (advection upwind + diffusion turbulente ν<sub>t</sub> = ν<sub>t0</sub> + c·|v|·d<sub>paroi</sub>), couplage flottabilité de Boussinesq faible en 2 passes. <b>Fenêtres</b> : les faces de bord concernées échangent avec la température extérieure à U (W/m²K) ; l’infiltration éventuelle est une entrée d’air neuf (âge 0) à T extérieure, le débit extrait total = soufflage + infiltration. <b>Couleurs</b> : bleu = froid / petit / faible, rouge = chaud / grand / élevé, sur toutes les grandeurs. Taux de balayage local = τN / âge local. Outil d’aide au dimensionnement — ne remplace pas une étude CFD réglementaire (RE2020, NF EN 16798-1, ASHRAE 62.1).</p>'
+  +'</body></html>';
+  $('#overlay').hidden=false;
+  $('#repFrame').srcdoc=rapportHTML;
+}
+function fermerRapport(){$('#overlay').hidden=true;}
+function imprimerRapport(){const f=$('#repFrame');f.contentWindow.focus();f.contentWindow.print();}
+function telechargerRapport(){const blob=new Blob([rapportHTML],{type:'text/html'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='rapport-balayage.html';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);}
+/* ================= Init ================= */
+loadHash()||loadLocal();
+uid=1+allIds();
+normalizeAll();
+sim=state._run?state._run.sim:null;
+if(sim)Object.assign(G,state._run.G);else Object.assign(G,{N:0});
+renderAll();reinitUI();drawHeatmap();render3D();attach2D();attach3D();renderScenarios();renderHistorique();renderComparaison();
+window.addEventListener('resize',()=>{drawHeatmap();render3D();});
+</script>
+</body>
+</html>
+

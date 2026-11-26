@@ -1,7 +1,7 @@
 # ROADMAP — Simulateur de balayage de ventilation
 
 Projet : `Xianos51/Simulation-balayage-ventilation-` (GitHub, public)
-Dernière mise à jour : 2026-11-22
+Dernière mise à jour : 2026-11-26
 
 ---
 
@@ -178,12 +178,73 @@ ordonnancement red-black pour diviser le temps de calcul par ~2.
   champ de température (Dirichlet explicite via `dirValT`), elles étaient à Tamb avant — la flottabilité
   couplée en passe 2 est donc légèrement différente. Aucun changement sur la masse/l'âge hors couplage.
 
-## 6. Phase 3 (prévu)
-- **CFD eulérienne complète** : Navier-Stokes incompressible (projection de Chorin) +
-  turbulence (k-ε simplifié ou LES) sur grille MAC, en **WebGPU (compute shaders)** ou WASM
-  multithread — pour les recirculations fines, sillages d'obstacles, stratifications complexes.
-- Validation CFD : cavité entraînée (benchmark de Ghia), jet libre, canal plan.
-- Optionnel (hors contrainte PC pro) : solveur côté serveur / CLI headless pour campagnes longues.
+## 6. Phase 3 — partie livrée le 2026-11-26 (fichier unique, moteur JS/Worker)
+
+Livrable : `index.html` (toujours un seul fichier autonome, zéro dépendance). Toutes les
+nouvelles physiques sont **opt-in ou neutres par défaut** : avec les réglages par défaut,
+les métriques de référence restent celles de la phase 2 (voir validation ci-dessous).
+
+### P3.1 — Couplage flottabilité multi-passes réglable (`nCoupl`, section 6)
+- Remplace le couplage fixe « 2 passes » par une boucle flottabilité → projection → âge →
+  température, réglable de 2 (comportement historique, défaut) à 8 passes.
+- 5 passes renforcent la stratification (écart haut-bas mesuré : 0,44 K → 1,13 K en
+  chauffage plafond 30 °C) et conservent le résidu de divergence ~1e-8.
+
+### P3.2 — Sillage des obstacles (option `wake`, section 6)
+- Déficit de vitesse (jusqu'à 70 %) dans un cône élargi (demi-angle ~8,5°) en aval de
+  chaque meuble, sur une longueur ~2,5× la plus grande dimension ; direction = écoulement
+  amont moyen autour de la boîte ; puis re-projection de Helmholtz (masse conservée,
+  résidu inchangé). Opt-in (plus lent, modèle simplifié).
+
+### P3.3 — Apports internes + rayonnement de parois
+- **Charge thermique par élément de mobilier** (`charge (W)`, négatif = source de froid) :
+  répartie sur les cellules fluides au contact, source du transport de température ;
+  nouvelle stat et KPI rapport « Apports internes (W) » + « Bilan thermique net ».
+  Vérifié headless : 800 W déclarés = 800 W exacts, T zone d'occupation 18,1 → 20,9 °C.
+- **h de paroi réglable** (`hWall`, défaut 2 W/m²K) + option **rayonnement linéarisé**
+  (`rad` : + 5,5 W/m²K). Vérifié : h=15,5 + rayonnement tire la zone d'occupation vers
+  Tamb (18,7 → 19,6 °C).
+
+### P3.4 — Infiltration par perméabilité des menuiseries (NF EN 12207)
+- Par fenêtre : `Q4Pa` (m³/h·m² sous 4 Pa). Le débit saisi (`infil.`) reste prioritaire ;
+  sinon Q = Q4Pa·S·(ΔP/4)^(2/3) avec **ΔP supposé réglable** (`dPInf`, défaut 20 Pa).
+- Vérifié headless : Q4Pa=3, S=1,68 m², ΔP=20 Pa → Qinf = 14,74 m³/h exact,
+  depInf = 74,1 W = Qinf·ρcp·ΔT exact, τN = V/(Q+Qinf) exact.
+
+### P3.5 — Échelle de couleur adaptative (balayage / vitesse)
+- Borne haute = max(référence usuelle — 150 % / 0,5 m/s ; P95 du champ résolu ×1,1),
+  cachée par run comme l'échelle de température. Supprime la saturation « tout rouge »
+  qui rendait les tranches intermédiaires de la heat map identiques.
+
+### P3.6 — Correction physique : signe de la flottabilité (bug phase 1)
+- `addBuoyancy` appliquait wb = −g·β·(T−Tamb) : l'air **chaud descendait** et l'air froid
+  montait (l'inverse de la poussée d'Archimède). Signe corrigé (wb = +g·β·(T−Tamb)).
+- Effet : l'air froid de soufflage plonge et balaie la zone d'occupation en piston →
+  nouvelle référence du cas 1 (voir tableau). τN et la conservation de la masse sont
+  inchangés ; la stratification est désormais correcte dans les deux sens
+  (chauffage : chaud en haut ; refroidissement : froid en bas — vérifiés headless).
+
+### Validation phase 3 (headless, jsdom + worker simulé, grille 0,25 m)
+| Cas | Résultat | Verdict |
+|---|---|---|
+| Non-régression masse/τN (cas 1, défauts) | τN = 1248 s exact, résidu div 6,3e-8 | OK |
+| Nouvelle référence thermique (signe corrigé) | âge moyen 9,6 min, ERE 216 % (vs 181 % avant correction — piston renforcé par la plongée de l'air froid) | documenté |
+| Apports internes 800 W | qInt = 800 W exact, T occ +2,8 K | OK |
+| Perméabilité Q4Pa | Qinf/depInf/τN exacts au 0,1 près | OK |
+| Couplage 5 passes | converge (7,6e-8), stratification amplifiée | OK |
+| Sillage (unitaire + intégré) | déficit aval 1,00 → 0,44 ; amont inchangé ; masse conservée | OK |
+| Parois h + rayonnement | T occ tirée vers Tamb comme attendu | OK |
+
+### Phase 3 — restant reporté (décision du 2026-11-26)
+- **NS complète (projection de Chorin + k-ε/LES) en WebGPU/WASM** : reporté. Raisons :
+  le gain attendu porte sur des détails fins (sillages, recirculations) que le modèle
+  analytique de sillage P3.2 couvre déjà approximativement ; WebGPU n'est pas disponible
+  sur tous les navigateurs/PC pro visés ; un solveur NS complet inline est incompatible
+  avec l'exigence de robustesse d'un fichier unique validé. À réévaluer si le besoin
+  de CFD réglementaire devient réel.
+- **Multi-pièces couplées par portes (ΔP)** : reporté (refonte du domaine — l'étude
+  multi-pièces indépendante couvre l'usage courant).
+- **CLI/solveur serveur** : hors contrainte « aucune installation sur le PC pro ».
 
 ## 7. Journal des décisions
 
@@ -202,6 +263,8 @@ ordonnancement red-black pour diviser le temps de calcul par ~2.
 | 2026-11-21 | **Phase 2 livrée en local** : Web Worker inline (calcul non bloquant), scénarios nommés, historique des runs, comparaison côte à côte de 2 runs, export CSV 3D, effet Coanda explicite | besoin pro : comparer des configurations rapidement, ne pas bloquer l’UI pendant le calcul, rejouer des runs passés ; push GitHub toujours différé à la satisfaction de l’utilisateur |
 | 2026-11-22 | **P2.7 livrée en local** : fenêtres sur les parois + température extérieure (Robin U·Text, infiltration = air neuf à Text rééquilibrée sur les reprises, τN = V/(Q+Qinf), déperditions depWin/depInf) + v0/portée fabricant par bouche (calibrage du noyau du jet à vTerm) | demande utilisateur « avant la prochaine phase » : thermique réaliste avec l’extérieur et jets fidèles aux données fabricant ; non-régression res 0,25 validée (voir P2.7), écart ERE expliqué par la correction T=Tsouf aux soufflages |
 | 2026-11-22 | **Bug fix** : le sélecteur « Grandeur affichée » (section 7) ne changeait jamais la heat map — `updSim` ne retenait que les valeurs numériques (`parseFloat('vit')` = NaN → affectation sautée, grandeur restait « balayage ») | remontée utilisateur : la heat map affichait toujours le balayage en vitesse/température ; corrigé (affectation directe pour `grandeur`), vérifié headless : grandeur = vit/temp/age OK et `grandeurVal` retourne bien la bonne grandeur |
+| 2026-11-26 | **Phase 3 (partie applicable) livrée** : couplage flottabilité multi-passes réglable, sillage d'obstacles opt-in, apports internes du mobilier, h parois + rayonnement linéarisé, perméabilité Q4Pa (NF EN 12207) avec ΔP supposé, échelle de couleur adaptative (P95) — toutes les nouveautés neutres par défaut (non-régression validée) | demande utilisateur « implémente les futures phases » ; le solveur NS WebGPU complet est reporté avec justification (voir phase 3) |
+| 2026-11-26 | **Bug fix physique** : le signe de la flottabilité de Boussinesq était inversé (l'air chaud descendait, l'air froid montait) ; corrigé + nouvelle référence du cas 1 (ERE 181 → 216 %, âge moyen 11,6 → 9,6 min, τN inchangé) | trouvée en implémentant la phase 3 : la stratification chauffage/refroidissement était dans le mauvais sens ; headless : chaud en haut en chauffage, froid en bas en refroidissement |
 | 2026-11-22 | **Bug fix affichage température** : l'échelle de couleurs « temp » allait de Text à max(Tsouf,Tamb)+1 → avec Text = 5 °C, toute la plage utile (17–22 °C) était écrasée en bleu uniforme. Corrigé : échelle = min/max réellement résolus du champ (`tempScale()`, cachée par run). Ajouts UX : **tooltip au survol** de la heat map (valeur exacte par cellule x,y,z) et **bandeau ⚠ « configuration modifiée depuis la dernière résolution »** quand on édite la config après un run (18 saisies + updSim marquées) | remontée utilisateur : heat map température « uniformément 17 °C » alors que soufflage à 22 °C ; cause = échelle élargie par Text + run non relancé après changement de Tsouf ; vérifié headless : échelle 18,8–22,2, 24 couleurs distinctes sur un dégradé 19→22 °C, ⚠ déclenché par updRoom mais pas par grandeur/tranche |
 
 ## 8. Questions ouvertes

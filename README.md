@@ -26,6 +26,9 @@ Deux façons, sans rien installer (un navigateur suffit) :
    échangent thermiquement avec l'extérieur à Text ; l'infiltration est traitée comme de
    l'air neuf (âge 0) à Text, et le débit total extrait = soufflage + infiltration.
    Les fenêtres se déplacent aussi à la souris (traits ambrés « F1… » sur la vue de dessus).
+2bis. **Fenêtres** : en plus du débit d'infiltration imposé (m³/h), chaque menuiserie peut
+   être décrite par sa **perméabilité Q4Pa** (m³/h·m² sous 4 Pa, ex. NF EN 12207) — le débit
+   est alors Q = Q4Pa·S·(ΔP/4)^(2/3) avec le ΔP supposé de la section 6.
 3. **Bouches de soufflage** : montage (plafond / mur), forme (ronde, carrée, fente, grille),
    position, débit (m³/h), direction/azimut/rotation, et éventuellement **v0 (m/s)** et
    **portée (m)** données par le fabricant : si renseignées, le jet analytique est calibré
@@ -33,8 +36,10 @@ Deux façons, sans rien installer (un navigateur suffit) :
    depuis Q et la section et la portée découle de la loi standard. Les bouches, reprises,
    fenêtres et le mobilier se déplacent aussi à la souris sur la vue de dessus.
 4. **Reprises d'air** : position, taille, débit (auto-rééquilibré sur soufflage + infiltration si non renseigné).
-5. **Mobilier & obstacles** : presets ou dimensions libres.
-6. **Résolution** : choisir la résolution de grille, la diffusion turbulente et vTerm (seuil de portée des jets), puis
+5. **Mobilier & obstacles** : presets ou dimensions libres, avec une **charge thermique (W)**
+   par élément (occupant, bureautique, éclairage…) injectée dans le champ de température
+   (négatif = source de froid) ; stat « apports internes » et bilan thermique au rapport.
+6. **Résolution** : choisir la résolution de grille, la diffusion turbulente, vTerm (seuil de portée des jets) et, **en phase 3** : le nombre de passes de couplage flottabilité (2 = standard, 4-6 = stratification renforcée), le **sillage des obstacles** (opt-in), l'**échange de parois h** (avec option rayonnement +5,5 W/m²K) et le **ΔP supposé** pour la perméabilité des menuiseries, puis
    « Résoudre le champ ». Le calcul tourne dans un **Web Worker** (l'interface reste fluide) ;
    il itère **jusqu’à convergence de l’état permanent** (la ligne de progression affiche les
    itérations et le résidu de chaque étape, repris dans le rapport) : le résultat affiché est
@@ -93,6 +98,12 @@ Deux façons, sans rien installer (un navigateur suffit) :
 - Le calcul tourne dans un **Web Worker inline** (créé via Blob, compatible `file://`) :
   l'interface ne bloque pas pendant la résolution.
 - Les lignes de courant 3D sont advectées par ce champ résolu (visualisation).
+- **Phase 3 (optionnelle, défauts neutres)** : couplage flottabilité Boussinesq multi-passes
+  (2 à 8), sillage analytique des obstacles (déficit de vitesse en cône en aval des meubles,
+  re-projection pour conserver la masse), apports internes du mobilier (W), échange de parois
+  h réglable avec rayonnement linéarisé optionnel (+5,5 W/m²K), infiltration par perméabilité
+  Q4Pa (NF EN 12207) convertie en débit selon un ΔP supposé, et échelle de couleur adaptative
+  (P95 du champ) pour le balayage et la vitesse (plus de saturation « tout rouge »).
 
 ## Limites (à lire avant usage pro)
 

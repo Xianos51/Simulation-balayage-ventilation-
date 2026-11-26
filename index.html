@@ -134,7 +134,7 @@ input[type=range]{padding:0}
       <button id="btnCsv" onclick="exporterCSV()" disabled>Champs 3D (CSV)</button>
     </div>
     <h2>Méthodologie</h2>
-    <p class="note">Modèle eulérien en régime permanent sur grille 3D : champ de vitesse = écoulement potentiel (sources aux soufflages, puits aux reprises, parois sans pénétration) + jets analytiques (loi en 1/x pour les jets ronds, 1/√x pour les fentes, expansion conique du profil), puis <b>projection de Helmholtz</b> qui garantit exactement ∇·v = sources/puits et v·n = 0 aux parois et obstacles (conservation de la masse). L'<b>âge de l'air</b> et la <b>température</b> sont résolus en permanent (advection upwind + diffusion turbulente ν<sub>t</sub>), avec couplage flottabilité de Boussinesq faible (l'air chaud monte, l'air froid descend). Le <b>taux de balayage local</b> = τ<sub>nominal</sub> / âge local × 100 % (τ<sub>nominal</sub> = V/Q). La vue 3D montre les lignes de courant advectées par le champ résolu. <b>Fenêtres</b> : les faces de mur concernées échangent avec la <b>température extérieure</b> (U en W/m²K) et l'infiltration éventuelle est de l'air neuf à T extérieure ; les jets sont calibrés sur <b>v0 / portée fabricant</b> si renseignées. Outil d'aide au dimensionnement — ne remplace pas une étude CFD réglementaire (RE2020, NF EN 16798-1, ASHRAE 62.1).</p>
+    <p class="note">Modèle eulérien en régime permanent sur grille 3D : champ de vitesse = écoulement potentiel (sources aux soufflages, puits aux reprises, parois sans pénétration) + jets analytiques (loi en 1/x pour les jets ronds, 1/√x pour les fentes, expansion conique du profil), puis <b>projection de Helmholtz</b> qui garantit exactement ∇·v = sources/puits et v·n = 0 aux parois et obstacles (conservation de la masse). L'<b>âge de l'air</b> et la <b>température</b> sont résolus en permanent (advection upwind + diffusion turbulente ν<sub>t</sub>), avec couplage flottabilité de Boussinesq faible (l'air chaud monte, l'air froid descend). Le <b>taux de balayage local</b> = τ<sub>nominal</sub> / âge local × 100 % (τ<sub>nominal</sub> = V/Q). La vue 3D montre les lignes de courant advectées par le champ résolu. <b>Fenêtres</b> : les faces de mur concernées échangent avec la <b>température extérieure</b> (U en W/m²K) et l'infiltration éventuelle est de l'air neuf à T extérieure ; les jets sont calibrés sur <b>v0 / portée fabricant</b> si renseignées. <b>Phase 3</b> : couplage flottabilité multi-passes réglable (section 6), sillage optionnel des obstacles, apports internes du mobilier (charge en W), rayonnement de parois linéarisé (h + 5,5 W/m²K) et infiltration des menuiseries par perméabilité Q4Pa (m³/h·m² sous 4 Pa → débit = Q4Pa·S·(ΔP/4)^(2/3), ΔP supposé réglable). Outil d'aide au dimensionnement — ne remplace pas une étude CFD réglementaire (RE2020, NF EN 16798-1, ASHRAE 62.1).</p>
   </aside>
   <section id="visu">
     <div id="stats"></div>
@@ -186,7 +186,7 @@ const DEFAULT_PIECE={
     {id:uid++,preset:'Table',nom:'Table 1',x:2,y:1.2,z:0,L:1.6,l:0.8,H:0.75},
     {id:uid++,preset:'Table 2',x:4,y:1.2,z:0,L:1.6,l:0.8,H:0.75}
   ],
-  sim:{res:0.25,nu0:0.005,cnu:0.09,zocc:1.8,seed:42,nstream:24,grandeur:'balayage',tranche:1.1,maxIt:40000,vTerm:0.25}
+  sim:{res:0.25,nu0:0.005,cnu:0.09,zocc:1.8,seed:42,nstream:24,grandeur:'balayage',tranche:1.1,maxIt:40000,vTerm:0.25,nCoupl:2,wake:0,dPInf:20,hWall:2,rad:0}
 };
 function defaultPiece(nom){const p=JSON.parse(JSON.stringify(DEFAULT_PIECE));p.nom=nom||'Pièce 1';p._run=null;p._simLite=null;return p;}
 /* Une étude = plusieurs pièces. `state` pointe toujours vers la pièce active. */
@@ -604,6 +604,7 @@ function renderWindows(){
       <label>haut. (m)<input type="number" step="0.05" min="0.1" value="${w.haut}" oninput="updWindow(${i},'haut',this.value)"></label>
       <label>U (W/m²K)<input type="number" step="0.1" min="0.3" max="6" value="${w.u==null?2:w.u}" oninput="updWindow(${i},'u',this.value)" title="Coefficient surfacique du vitrage (W/m²K)"></label>
       <label>infil. (m³/h)<input type="number" step="1" min="0" value="${w.q||0}" oninput="updWindow(${i},'q',this.value)" title="Débit d'infiltration d'air extérieur à travers la fenêtre (m³/h) — air neuf à T extérieure"></label>
+      <label title="Perméabilité de la menuiserie (m³/h·m² sous 4 Pa, ex. NF EN 12207). Priorité au débit saisi ci-dessus ; sinon converti en débit : Q4Pa × surface × (ΔP/4)^(2/3) avec ΔP réglé en section 6.">perméa. Q4Pa<input type="number" step="0.1" min="0" value="${w.q4pa==null?0:w.q4pa}" oninput="updWindow(${i},'q4pa',this.value)"></label>
       <button class="mini" onclick="copierWindow(${i})" title="Dupliquer cette fenêtre">⧉</button><button class="mini" onclick="delWindow(${i})">✕</button></div>`;
   }).join('')+'<p class="note">Fenêtre = rectangle sur un bord du plan (pièce rectangulaire ou non) : « pos » = position le long du bord (m), allège z, largeur × hauteur. Les fenêtres échangent avec l’extérieur à la température extérieure (section 1) via U ; l’infiltration est une entrée d’air neuf à T extérieure, rééquilibrée sur les reprises (débit total extrait = soufflage + infiltration). Déplaçables à la souris sur la vue de dessus (traits ambrés « F1… »).</p>';
 }
@@ -671,6 +672,7 @@ function renderMobilier(){
     <label>L (m)<input type="number" step="0.05" value="${m.L}" oninput="updMeuble(${i},'L',this.value)"></label>
     <label>l (m)<input type="number" step="0.05" value="${m.l}" oninput="updMeuble(${i},'l',this.value)"></label>
     <label>H (m)<input type="number" step="0.05" value="${m.H}" oninput="updMeuble(${i},'H',this.value)"></label>
+    <label title="Charge thermique dissipée par cet élément (occupant, bureautique, éclairage…). Négatif = source de froid.">charge (W)<input type="number" step="10" value="${m.pW==null?0:m.pW}" oninput="updMeuble(${i},'pW',this.value)"></label>
     <button class="mini" onclick="copierMeuble(${i})" title="Dupliquer cet élément">⧉</button><button class="mini" onclick="delMeuble(${i})">✕</button></div>`).join('');
 }
 function renderSimParams(){
@@ -686,7 +688,12 @@ function renderSimParams(){
     <label class="f"><span>Hauteur zone d'occupation (m)</span><input type="number" step="0.1" min="0.5" max="3" value="${s.zocc}" oninput="updSim('zocc',this.value)"></label>
     <label class="f"><span>Seed aléatoire</span><input type="number" step="1" min="0" value="${s.seed}" oninput="updSim('seed',this.value)"></label>
     <label class="f"><span>Lignes de courant / bouche</span><input type="number" step="4" min="4" max="64" value="${s.nstream}" oninput="updSim('nstream',this.value)"></label>
-    <label class="f"><span>Itérations max (solveurs)</span><input type="number" step="5000" min="2000" max="60000" value="${s.maxIt}" oninput="updSim('maxIt',this.value)"></label>`;
+    <label class="f"><span>Itérations max (solveurs)</span><input type="number" step="5000" min="2000" max="60000" value="${s.maxIt}" oninput="updSim('maxIt',this.value)"></label>
+    <label class="f" title="Phase 3 : nombre de cycles flottabilité → projection → âge/température. 2 = couplage standard (stratification simple) ; 4 à 6 = stratification renforcée (plus lent)."><span>Couplage flottabilité (passes)</span><input type="number" step="1" min="2" max="8" value="${s.nCoupl==null?2:s.nCoupl}" oninput="updSim('nCoupl',this.value)"></label>
+    <label class="f"><span>Échange parois h (W/m²K)</span><input type="number" step="0.5" min="0" max="20" value="${s.hWall==null?2:s.hWall}" oninput="updSim('hWall',this.value)" title="Coefficient d'échange convectif des parois (défaut 2 W/m²K)"></label>
+    <label class="f"><span>Rayonnement parois inclus</span><input type="checkbox" style="width:auto" ${s.rad?'checked':''} onchange="updSimChk('rad',this.checked)" title="Ajoute le rayonnement linéarisé (≈ +5,5 W/m²K) à l'échange des parois avec T ambiante"></label>
+    <label class="f" title="Phase 3 : déficit de vitesse dans un cône en aval de chaque meuble (sillage), puis re-projection (conservation de la masse). Plus lent."><span>Sillage des obstacles (phase 3)</span><input type="checkbox" style="width:auto" ${s.wake?'checked':''} onchange="updSimChk('wake',this.checked)"></label>
+    <label class="f" title="ΔP supposé à travers les menuiseries pour convertir la perméabilité Q4Pa (m³/h·m² sous 4 Pa) en débit d'infiltration (loi en (ΔP/4)^(2/3))"><span>ΔP infiltration supposé (Pa)</span><input type="number" step="5" min="4" max="200" value="${s.dPInf==null?20:s.dPInf}" oninput="updSim('dPInf',this.value)"></label>`;
 }
 function renderAffParams(){
   const s=state.sim;
@@ -711,6 +718,7 @@ function delMeuble(i){marquerPerime();state.mobilier.splice(i,1);renderMobilier(
 function copierMeuble(i){marquerPerime();const m=JSON.parse(JSON.stringify(state.mobilier[i]));m.id=uid++;const bb=bboxOf(polyOf(state.room));m.x=clamp((m.x||0)+0.3,bb.x0,Math.max(bb.x0,bb.x1-m.L));m.y=clamp((m.y||0)+0.3,bb.y0,Math.max(bb.y0,bb.y1-m.l));m.nom=(m.nom||'Élément')+' (copie)';state.mobilier.push(m);renderMobilier();saveLocal();refreshViews();}
 function addMeuble(){marquerPerime();const n=state.mobilier.length+1;const bb=bboxOf(polyOf(state.room));state.mobilier.push({id:uid++,preset:'Table',nom:'Élément '+n,x:(bb.x0+bb.x1)/2,y:(bb.y0+bb.y1)/2,z:0,L:1.6,l:0.8,H:0.75});renderMobilier();saveLocal();refreshViews();}
 function updSim(k,v){if(k==='grandeur'){state.sim[k]=v;saveLocal();drawHeatmap();return;}const x=parseFloat(v);if(!isNaN(x))state.sim[k]=x;if(k!=='tranche')marquerPerime();saveLocal();}
+function updSimChk(k,v){state.sim[k]=v?1:0;marquerPerime();saveLocal();}
 function changerTranche(v){state.sim.tranche=parseFloat(v);$('#lblTranche').textContent=fmt(parseFloat(v),1);saveLocal();drawHeatmap();}
 /* Normalise les états chargés (scénarios anciens : sans fenêtres / Text / vTerm / v0 / portee,
    montages 'murX0'... -> bords du rectangle, fenêtres 'mur' -> edge, pas de polygone) */
@@ -722,10 +730,17 @@ function normalizePiece(p){
   if(p.room.poly){if(p.room.poly.length<3)p.room.poly=null;else ensureCCW(p.room.poly);}
   if(!p.sim)p.sim=JSON.parse(JSON.stringify(DEFAULT_PIECE.sim));
   if(p.sim.vTerm==null)p.sim.vTerm=0.25;
+  if(p.sim.nCoupl==null)p.sim.nCoupl=2;
+  if(p.sim.wake==null)p.sim.wake=0;
+  if(p.sim.dPInf==null)p.sim.dPInf=20;
+  if(p.sim.hWall==null)p.sim.hWall=2;
+  if(p.sim.rad==null)p.sim.rad=0;
   for(const w of p.windows){
     if(w.edge==null){w.edge=(w.mur&&LEGACY_EDGE[w.mur]!=null)?LEGACY_EDGE[w.mur]:0;}
+    if(w.q4pa==null)w.q4pa=0;
     delete w.mur;
   }
+  for(const m of (p.mobilier||[])){if(m.pW==null)m.pW=0;}
   for(const b of [...(p.supplies||[]),...(p.extracts||[])]){
     if(b.v0==null)b.v0=null;if(b.portee==null)b.portee=null;
     if(b.cloison==null)b.cloison=0;if(!b.face)b.face='x+';
@@ -841,7 +856,7 @@ function buildWindowData(){
         if(cells.indexOf(c)<0)cells.push(c);
       }
     }
-    G.windows.push({w:w,cells:cells,edge:k});
+    G.windows.push({w:w,cells:cells,edge:k,qEff:((w.q||0)>0?(w.q||0):((w.q4pa||0)>0?(w.q4pa||0)*(w.larg||0)*(w.haut||0)*Math.pow(Math.max(4,(state.sim.dPInf==null?20:state.sim.dPInf))/4,2/3):0))});
   }
 }
 function spreadCells(p,b){
@@ -893,7 +908,7 @@ function computeSources(){
   const r=state.room,res=G.res,vol=res*res*res;
   const Text=(r.Text==null?r.Tamb:r.Text);
   const Qs=state.supplies.map(b=>b.q/3600),Qtot=Qs.reduce((a,b)=>a+b,0);
-  let Qinf=0;for(const w of (state.windows||[]))Qinf+=(w.q||0)/3600;
+  let Qinf=0;for(const wd of (G.windows||[]))Qinf+=(wd.qEff||0)/3600;
   const Qout=Qtot+Qinf; /* débit total extrait = soufflage + infiltration (conservation de la masse) */
   let Qe=state.extracts.map(e=>e.q>0?e.q/3600:0);
   const sumQe=Qe.reduce((a,b)=>a+b,0);
@@ -921,7 +936,7 @@ function computeSources(){
   /* Fenêtres : l'infiltration est une entrée d'air neuf (âge 0) à T extérieure,
      répartie sur les cellules fluides adjacentes à la fenêtre */
   for(const wd of (G.windows||[])){
-    const q=(wd.w.q||0)/3600;
+    const q=(wd.qEff||0)/3600;
     if(q>0&&wd.cells.length)wd.cells.forEach(c=>{G.S[c]+=q/wd.cells.length/vol;G.dirMask[c]=1;G.dirValT[c]=Text;});
   }
   G.Qtot=Qtot;G.Qinf=Qinf;G.volRoom=(G.area!=null?G.area:polyArea(polyOf(r)))*r.H;
@@ -1189,7 +1204,8 @@ function solveTransport(mode,maxIt,tol){
   const isT=mode==='T';
   if(isT){a.fill(state.room.Tamb);for(let c=0;c<G.N;c++)if(dir[c])a[c]=G.dirValT[c];}
   else a.fill(0);
-  const hWall=2.0,rhocp=1206;
+  const rhocp=1206;
+  const hWall=((state.sim.hWall==null?2:state.sim.hWall))+(state.sim.rad?5.5:0);
   const rb=rbLists();
   let okCount=0;
   for(let it=0;it<maxIt;it++){
@@ -1241,6 +1257,7 @@ function transportStep(a,c,i,j,k,res,dir,ext,D,isT,hWall,rhocp){
         if((f=wall(G.bndFy1[c],'winFy1'))){num+=f.h*f.T/rhocp;den+=f.h/rhocp;}
         if(G.bndFz0[c]){num+=hWall*state.room.Tamb/rhocp;den+=hWall/rhocp;}
         if(G.bndFz1[c]){num+=hWall*state.room.Tamb/rhocp;den+=hWall/rhocp;}
+        if(G.qHeat&&G.qHeat[c])num+=G.qHeat[c]/(res*res*rhocp);
       }else{
         num+=res;
       }
@@ -1249,12 +1266,80 @@ function transportStep(a,c,i,j,k,res,dir,ext,D,isT,hWall,rhocp){
       return 0;
   }
 }
-/* --- Flottabilité faible (Boussinesq) : correction verticale, puis re-projection --- */
+/* --- Apports internes (phase 3) : charge thermique du mobilier (W) répartie sur les
+       cellules fluides au contact de l'élément (enveloppe) — utilisée par le transport T --- */
+function buildHeatSources(){
+  G.qHeat=new Float64Array(G.N);
+  const res=G.res,{nx,ny,nz}=G;
+  for(const m of state.mobilier){
+    const pW=(m.pW||0);if(!pW)continue;
+    const cells=[];
+    const i0=Math.max(0,Math.floor(m.x/res)-1),i1=Math.min(nx-1,Math.ceil((m.x+m.L)/res)+1);
+    const j0=Math.max(0,Math.floor(m.y/res)-1),j1=Math.min(ny-1,Math.ceil((m.y+m.l)/res)+1);
+    const k0=Math.max(0,Math.floor(m.z/res)-1),k1=Math.min(nz-1,Math.ceil((m.z+m.H)/res)+1);
+    for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
+      const c=idx(i,j,k);if(G.solid[c])continue;
+      const x=(i+0.5)*res,y=(j+0.5)*res,z=(k+0.5)*res,pad=1.01*res;
+      if(x>m.x-pad&&x<m.x+m.L+pad&&y>m.y-pad&&y<m.y+m.l+pad&&z>m.z-pad&&z<m.z+m.H+pad)cells.push(c);
+    }
+    cells.forEach(c=>{G.qHeat[c]+=pW/cells.length;});
+  }
+}
+/* --- Sillage des obstacles (phase 3, opt-in) : déficit de vitesse dans un cône élargi en
+       aval de chaque meuble, direction = écoulement amont moyen autour de la boîte.
+       Modifie les faces : appeler cellVel() puis re-projeter (conservation de la masse). --- */
+function addWakes(){
+  const r=state.room,res=G.res,{nx,ny,nz}=G;
+  for(const m of state.mobilier){
+    const i0=Math.max(0,Math.floor(m.x/res)-2),i1=Math.min(nx-1,Math.ceil((m.x+m.L)/res)+2);
+    const j0=Math.max(0,Math.floor(m.y/res)-2),j1=Math.min(ny-1,Math.ceil((m.y+m.l)/res)+2);
+    const k0=Math.max(0,Math.floor(m.z/res)-1),k1=Math.min(nz-1,Math.ceil((m.z+m.H)/res)+1);
+    let vx=0,vy=0,vz=0,n=0;
+    for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
+      const c=idx(i,j,k);if(G.solid[c])continue;
+      const x=(i+0.5)*res,y=(j+0.5)*res,z=(k+0.5)*res,pad=1.01*res;
+      if(x>m.x-pad&&x<m.x+m.L+pad&&y>m.y-pad&&y<m.y+m.l+pad&&z>m.z-pad&&z<m.z+m.H+pad)continue;
+      vx+=G.vc[3*c];vy+=G.vc[3*c+1];vz+=G.vc[3*c+2];n++;
+    }
+    if(!n)continue;
+    vx/=n;vy/=n;vz/=n;
+    const U=Math.hypot(vx,vy,vz);
+    if(U<0.02)continue;
+    const ux=vx/U,uy=vy/U,uz=vz/U;
+    const Dp=Math.max(m.L,m.l,m.H);
+    const Lw=clamp(2.5*Dp,0,Math.max(r.L,r.l,r.H));
+    const cx=m.x+m.L/2,cy=m.y+m.l/2,cz=m.z+m.H/2;
+    const swx=new Float64Array(G.fx.length).fill(1),swy=new Float64Array(G.fy.length).fill(1),swz=new Float64Array(G.fz.length).fill(1);
+    const bi0=Math.max(0,Math.floor((Math.min(cx,cx+ux*Lw)-Dp)/res)),bi1=Math.min(nx-1,Math.ceil((Math.max(cx,cx+ux*Lw)+Dp)/res));
+    const bj0=Math.max(0,Math.floor((Math.min(cy,cy+uy*Lw)-Dp)/res)),bj1=Math.min(ny-1,Math.ceil((Math.max(cy,cy+uy*Lw)+Dp)/res));
+    const bk0=Math.max(0,Math.floor((Math.min(cz,cz+uz*Lw)-Dp)/res)),bk1=Math.min(nz-1,Math.ceil((Math.max(cz,cz+uz*Lw)+Dp)/res));
+    for(let k=bk0;k<=bk1;k++)for(let j=bj0;j<=bj1;j++)for(let i=bi0;i<=bi1;i++){
+      const c=idx(i,j,k);if(G.solid[c])continue;
+      const rx=(i+0.5)*res-cx,ry=(j+0.5)*res-cy,rz=(k+0.5)*res-cz;
+      const sA=rx*ux+ry*uy+rz*uz;
+      if(sA<=0||sA>Lw)continue;
+      const rad=Dp/2+0.15*sA;
+      const qx=rx-ux*sA,qy=ry-uy*sA,qz=rz-uz*sA;
+      if(Math.hypot(qx,qy,qz)>rad)continue;
+      const scale=1-0.7*(1-sA/Lw);
+      swx[fxi(i,j,k)]=Math.min(swx[fxi(i,j,k)],scale);swx[fxi(i+1,j,k)]=Math.min(swx[fxi(i+1,j,k)],scale);
+      swy[fyi(i,j,k)]=Math.min(swy[fyi(i,j,k)],scale);swy[fyi(i,j+1,k)]=Math.min(swy[fyi(i,j+1,k)],scale);
+      swz[fzi(i,j,k)]=Math.min(swz[fzi(i,j,k)],scale);swz[fzi(i,j,k+1)]=Math.min(swz[fzi(i,j,k+1)],scale);
+    }
+    for(let f=0;f<G.fx.length;f++)G.fx[f]*=swx[f];
+    for(let f=0;f<G.fy.length;f++)G.fy[f]*=swy[f];
+    for(let f=0;f<G.fz.length;f++)G.fz[f]*=swz[f];
+  }
+}
+/* --- Flottabilité faible (Boussinesq) : correction verticale, puis re-projection.
+     Poussée d'Archimède : l'air plus chaud que l'ambiance subit une force vers le HAUT
+     (wb = +g·β·(T−Tamb)) ; signe corrigé en phase 3 (l'ancien signe inversé faisait
+     descendre l'air chaud et monter l'air froid). --- */
 function addBuoyancy(temp){
   const {nx,ny,nz}=G;
   const g=9.81,beta=1/293,tauB=0.5;
   const wb=new Float64Array(G.N);
-  for(let c=0;c<G.N;c++)if(!G.solid[c])wb[c]=-g*beta*(temp[c]-state.room.Tamb)*tauB;
+  for(let c=0;c<G.N;c++)if(!G.solid[c])wb[c]=g*beta*(temp[c]-state.room.Tamb)*tauB;
   for(let k=0;k<=nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
     if(k===0||k===nz){G.fz[fzi(i,j,k)]=0;continue;}
     const a=idx(i,j,k-1),b=idx(i,j,k);
@@ -1306,10 +1391,11 @@ function computeResults(){
   }
   let qAge=0,qTot=0;
   for(const e of G.extractCells)for(const c of e.cells){const q=Math.abs(G.S[c])*res*res*res;qAge+=q*sim.age[c];qTot+=q;}
+  let qInt=0;if(G.qHeat)for(let c=0;c<G.N;c++)qInt+=G.qHeat[c];
   sim.res={
     tauN:G.tauN,ACH:G.ACH,ageMoy:ageMoy,ERE:G.tauN/Math.max(ageMoy,1e-9),
     pctOk:100*okVol/Math.max(volF,1e-9),pctDead:100*deadVol/Math.max(volF,1e-9),
-    divRes:divRes,bilanAge:qTot>0?qAge/qTot:0,depWin:depWin,depInf:depInf,
+    divRes:divRes,bilanAge:qTot>0?qAge/qTot:0,depWin:depWin,depInf:depInf,qInt:qInt,
     oz:{n:ozN,age:ozN?ozAge/ozN:0,v:ozN?ozV/ozN:0,T:ozN?ozT/ozN:0,pctOk:ozN?100*ozOk/ozN:0}
   };
 }
@@ -1360,8 +1446,9 @@ function buildWorkerCode(){
     polyOf,polySignedArea,ensureCCW,polyArea,bboxOf,pointInPoly,edgeOf,nearestOnPoly,
     effAire,v0Of,v0Eff,sCoreOf,dirVec,posOf,slotAxes,dirOf,
     idx,fxi,fyi,fzi,
-    buildGrid,buildWindowData,spreadCells,nearestFluid,computeSources,
+    buildGrid,buildWindowData,spreadCells,nearestFluid,computeSources,buildHeatSources,
     gsPoisson,lapRes,rbLists,solvePoissonField,vFromPhi,
+    addWakes,
     addJets,divOfFaces,project,cellVel,distParoi,computeNuT,
     solveTransport,transportStep,addBuoyancy,checkConnectivity,
     computeResults,velAt,buildStreamlines
@@ -1385,7 +1472,7 @@ function buildWorkerCode(){
     +'    const convLines=[];\n'
     +'    const stage=(label,fn)=>{convStage=label;fn();if(G.lastConv)convLines.push(label+" : "+G.lastConv.it+" it, résidu "+G.lastConv.res.toExponential(1));};\n'
     +'    post({type:"progress",f:0.02,msg:"Construction de la grille…"});\n'
-    +'    buildGrid();buildWindowData();computeSources();\n'
+    +'    buildGrid();buildWindowData();computeSources();buildHeatSources();\n'
     +'    await checkPause();post({type:"progress",f:0.08,msg:"Champ potentiel (Poisson)…"});\n'
     +'    let phi;stage("potentiel",()=>{phi=solvePoissonField(G.S,false,simP.maxIt,1e-7);});\n'
     +'    vFromPhi(phi);\n'
@@ -1394,19 +1481,21 @@ function buildWorkerCode(){
     +'    await checkPause();post({type:"progress",f:0.32,msg:"Projection de Helmholtz…"});\n'
     +'    stage("projection",()=>{project(simP.maxIt,1e-7);});\n'
     +'    cellVel();distParoi();computeNuT();\n'
+    +'    if(simP.wake){await checkPause();post({type:"progress",f:0.40,msg:"Sillage des obstacles (phase 3)…"});addWakes();stage("projection sillage",()=>{project(simP.maxIt,1e-7);});cellVel();computeNuT();}\n'
     +'    await checkPause();post({type:"progress",f:0.45,msg:"Âge de l’air (permanent)…"});\n'
-    +'    let age1;stage("âge",()=>{age1=solveTransport("age",simP.maxIt,1e-7);});\n'
+    +'    let ageN;stage("âge",()=>{ageN=solveTransport("age",simP.maxIt,1e-7);});\n'
     +'    await checkPause();post({type:"progress",f:0.58,msg:"Température (permanent)…"});\n'
-    +'    let temp1;stage("température",()=>{temp1=solveTransport("T",simP.maxIt,1e-7);});\n'
-    +'    await checkPause();post({type:"progress",f:0.70,msg:"Couplage flottabilité faible (passe 2)…"});\n'
-    +'    addBuoyancy(temp1);\n'
-    +'    stage("projection 2",()=>{project(simP.maxIt,1e-7);});\n'
-    +'    cellVel();computeNuT();\n'
-    +'    await checkPause();post({type:"progress",f:0.82,msg:"Âge de l’air (passe 2)…"});\n'
-    +'    let age2;stage("âge 2",()=>{age2=solveTransport("age",simP.maxIt,1e-7);});\n'
-    +'    await checkPause();post({type:"progress",f:0.92,msg:"Température (passe 2)…"});\n'
-    +'    let temp2;stage("température 2",()=>{temp2=solveTransport("T",simP.maxIt,1e-7);});\n'
-    +'    sim={age:age2,temp:temp2,streams:[],conv:convLines.slice(),warn:(G.warn||[]).slice()};\n'
+    +'    let tempN;stage("température",()=>{tempN=solveTransport("T",simP.maxIt,1e-7);});\n'
+    +'    const nC=clamp(Math.round(simP.nCoupl||2),2,8);\n'
+    +'    for(let p=2;p<=nC;p++){\n'
+    +'      await checkPause();post({type:"progress",f:0.70+0.24*(p-1)/nC,msg:"Couplage flottabilité (passe "+p+"/"+nC+")…"});\n'
+    +'      addBuoyancy(tempN);\n'
+    +'      stage("projection "+p,()=>{project(simP.maxIt,1e-7);});\n'
+    +'      cellVel();computeNuT();\n'
+    +'      await checkPause();stage("âge "+p,()=>{ageN=solveTransport("age",simP.maxIt,1e-7);});\n'
+    +'      stage("température "+p,()=>{tempN=solveTransport("T",simP.maxIt,1e-7);});\n'
+    +'    }\n'
+    +'    sim={age:ageN,temp:tempN,streams:[],conv:convLines.slice(),warn:(G.warn||[]).slice()};\n'
     +'    computeResults();\n'
     +'    buildStreamlines();\n'
     +'    sim.connected=checkConnectivity();\n'
@@ -1538,6 +1627,7 @@ function updateStats(){
     [fmt(oz.T,1)+' °C','Temp. moy. zone occ.'],
     [fmt(R.bilanAge/60,1)+' min','Âge aux reprises (bilan)'],
     [fmt((R.depWin||0)+(R.depInf||0),0)+' W','Déperditions fenêtres (U·ΔT + infiltr.)'],
+    [fmt(R.qInt||0,0)+' W','Apports internes (charge mobilier)'],
     [R.divRes.toExponential(1),'Résidu div max']
   ].map(p=>`<div class="stat"><b>${p[0]}</b><span>${p[1]}</span></div>`).join('');
 }
@@ -1597,12 +1687,30 @@ function tempScale(){
   G._ts={lo:lo-0.2,hi:hi+0.2};G._tsFor=sim;
   return G._ts;
 }
+/* Échelle adaptative (phase 3) : borne haute = max(référence usuelle ; P95 du champ réellement
+   résolu ×1,1) — évite la saturation (tout rouge / tout bleu) quand les valeurs dépassent
+   largement la référence. Cachée par run (comme tempScale). */
+function fieldScale(g){
+  const key='fs_'+g,keyFor='fsFor_'+g;
+  if(G[key]&&G[keyFor]===sim)return G[key];
+  let hi;
+  const ref=g==='balayage'?150:0.5;
+  if(sim&&sim.age&&G.N){
+    const vals=[];
+    for(let c=0;c<G.N;c++){if(G.solid[c])continue;const v=grandeurVal(c);if(v!=null)vals.push(v);}
+    vals.sort((a,b)=>a-b);
+    const q=vals.length?vals[Math.min(vals.length-1,Math.floor(vals.length*0.95))]:0;
+    hi=Math.max(ref,q*1.1);
+  }else hi=ref;
+  G[key]={lo:0,hi:hi};G[keyFor]=sim;
+  return G[key];
+}
 /* t normalisé 0..1 pour la carte de couleur (partagé CPU / GPU) */
 function tOf(g,v){
-  if(g==='balayage')return clamp(v/150,0,1);
+  if(g==='balayage')return clamp(v/fieldScale('balayage').hi,0,1);
   if(g==='age')return clamp(v/Math.max(sim&&G.tauN?2*G.tauN/60:10,1),0,1);
   if(g==='temp'){const ts=tempScale();return clamp((v-ts.lo)/(ts.hi-ts.lo),0,1);}
-  return clamp(v/0.5,0,1);
+  return clamp(v/fieldScale('vit').hi,0,1);
 }
 /* Échelle commune à toutes les grandeurs : BLEU = froid/petit/faible, ROUGE = chaud/grand/élevé */
 const RAMP=[[37,99,235],[34,211,238],[52,211,153],[250,204,21],[239,68,68]];
@@ -1613,10 +1721,10 @@ function colorScale(g,v){
   return 'rgb('+c[0]+','+c[1]+','+c[2]+')';
 }
 function legendRange(g){
-  if(g==='balayage')return[0,150,' %'];
+  if(g==='balayage')return[0,fieldScale('balayage').hi,' %'];
   if(g==='age')return[0,Math.max(sim&&G.tauN?2*G.tauN/60:10,1),' min'];
   if(g==='temp'){const ts=tempScale();return[ts.lo,ts.hi,' °C'];}
-  return[0,0.5,' m/s'];
+  return[0,fieldScale('vit').hi,' m/s'];
 }
 /* ================= Rendu du champ : GPU (WebGL) avec repli CPU ================= */
 let GLR=null,GLRfailed=false;
@@ -2079,12 +2187,12 @@ function genererRapport(){
   const recap=study.pieces.length>1?'<h2>Étude multi-pièces — récap des pièces résolues</h2>'+(study.pieces.some(p=>p._simLite&&p._simLite.res)?'<table><tr><th>Pièce</th><th>τN (min)</th><th>ACH</th><th>Âge moy. (min)</th><th>ERE (%)</th><th>Vol. ≥ 100 % (%)</th><th>Zones mortes (%)</th><th>v zone occ. (m/s)</th><th>T zone occ. (°C)</th></tr>'+study.pieces.map(p=>{const R2=p._simLite&&p._simLite.res;if(!R2)return'<tr><td>'+esc(p.nom||'')+'</td><td colspan="8">non résolue</td></tr>';return '<tr><td>'+esc(p.nom||'')+'</td><td>'+fmt(R2.tauN/60,1)+'</td><td>'+fmt(R2.ACH,1)+'</td><td>'+fmt(R2.ageMoy/60,1)+'</td><td>'+fmt(R2.ERE*100,0)+'</td><td>'+fmt(R2.pctOk,0)+'</td><td>'+fmt(R2.pctDead,0)+'</td><td>'+fmt(R2.oz.v,2)+'</td><td>'+fmt(R2.oz.T,1)+'</td></tr>';}).join('')+'</table>':'<p>Une seule pièce résolue.</p>'):'';
   rapportHTML='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rapport de simulation de balayage</title><style>body{font-family:Arial,sans-serif;font-size:13px;margin:24px;color:#111}h1{font-size:18px}h2{font-size:14px;border-bottom:1px solid #999;margin-top:18px;padding-bottom:3px}table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}img{max-width:100%;border:1px solid #999}.kpi{display:flex;gap:12px;flex-wrap:wrap}.kpi div{border:1px solid #bbb;padding:8px 12px;min-width:110px}.kpi b{display:block;font-size:16px}p{line-height:1.5}</style></head><body>'
   +'<h1>Rapport de simulation de balayage de ventilation — '+esc(new Date().toLocaleString('fr-FR'))+'</h1>'
-  +'<h2>Pièce active : '+esc(state.nom||('Pièce '+(study.active+1)))+' — conditions</h2><p>Plan : '+(r.poly?'polygone à '+poly.length+' sommets':'rectangle')+' — emprise '+fmt(bb.x1-bb.x0,1)+' × '+fmt(bb.y1-bb.y0,1)+' m — aire '+fmt(area,1)+' m² — hauteur '+r.H+' m (V = '+fmt(area*r.H,1)+' m³) — T ambiante '+r.Tamb+' °C — T de soufflage '+r.Tsouf+' °C — <b>T extérieure '+fmt(r.Text==null?r.Tamb:r.Text,1)+' °C</b> — résolution de grille '+s.res+' m — seed '+s.seed+' — zone d’occupation z ≤ '+s.zocc+' m — vTerm (portée des jets) '+fmt(s.vTerm||0.25,2)+' m/s.</p>'
+  +'<h2>Pièce active : '+esc(state.nom||('Pièce '+(study.active+1)))+' — conditions</h2><p>Plan : '+(r.poly?'polygone à '+poly.length+' sommets':'rectangle')+' — emprise '+fmt(bb.x1-bb.x0,1)+' × '+fmt(bb.y1-bb.y0,1)+' m — aire '+fmt(area,1)+' m² — hauteur '+r.H+' m (V = '+fmt(area*r.H,1)+' m³) — T ambiante '+r.Tamb+' °C — T de soufflage '+r.Tsouf+' °C — <b>T extérieure '+fmt(r.Text==null?r.Tamb:r.Text,1)+' °C</b> — résolution de grille '+s.res+' m — seed '+s.seed+' — zone d’occupation z ≤ '+s.zocc+' m — vTerm (portée des jets) '+fmt(s.vTerm||0.25,2)+' m/s — échange parois h = '+fmt(s.hWall==null?2:s.hWall,1)+(s.rad?' + 5,5 (rayonnement)':'')+' W/m²K — couplage flottabilité '+clamp(Math.round(s.nCoupl||2),2,8)+' passe(s)'+(s.wake?' — sillage des obstacles activé':' — sillage désactivé')+'.</p>'
   +recap
-  +'<h2>Fenêtres (bords du plan)</h2>'+(state.windows&&state.windows.length?'<table><tr><th></th><th>Bord</th><th>pos (m)</th><th>allège z (m)</th><th>larg × haut (m)</th><th>U (W/m²K)</th><th>Infil. (m³/h)</th></tr>'+state.windows.map((w,i)=>{const e=edgeOf(poly,clamp(w.edge==null?0:w.edge,0,poly.length-1));return '<tr><td>F'+(i+1)+'</td><td>Bord '+(clamp(w.edge==null?0:w.edge,0,poly.length-1)+1)+' ('+fmt(e.len,1)+' m)</td><td>'+fmt(w.pos,2)+'</td><td>'+fmt(w.z,2)+'</td><td>'+fmt(w.larg,2)+' × '+fmt(w.haut,2)+'</td><td>'+(w.u==null?2:w.u)+'</td><td>'+(w.q||0)+'</td></tr>';}).join('')+'</table>':'<p>Aucune fenêtre définie — les parois échangent avec T ambiante (h = 2 W/m²K).</p>')
+  +'<h2>Fenêtres (bords du plan)</h2>'+(state.windows&&state.windows.length?'<table><tr><th></th><th>Bord</th><th>pos (m)</th><th>allège z (m)</th><th>larg × haut (m)</th><th>U (W/m²K)</th><th>Infil. (m³/h)</th><th>Q4Pa (m³/h·m²)</th></tr>'+state.windows.map((w,i)=>{const e=edgeOf(poly,clamp(w.edge==null?0:w.edge,0,poly.length-1));return '<tr><td>F'+(i+1)+'</td><td>Bord '+(clamp(w.edge==null?0:w.edge,0,poly.length-1)+1)+' ('+fmt(e.len,1)+' m)</td><td>'+fmt(w.pos,2)+'</td><td>'+fmt(w.z,2)+'</td><td>'+fmt(w.larg,2)+' × '+fmt(w.haut,2)+'</td><td>'+(w.u==null?2:w.u)+'</td><td>'+(w.q||0)+'</td><td>'+fmt(w.q4pa||0,2)+'</td></tr>';}).join('')+'</table>'+(state.windows.some(w=>(w.q4pa||0)>0)?'<p>Infiltration par perméabilité : Q = Q4Pa·S·(ΔP/4)^(2/3) avec ΔP = '+fmt(s.dPInf==null?20:s.dPInf,0)+' Pa supposé.</p>':''):'<p>Aucune fenêtre définie — les parois échangent avec T ambiante (h = '+fmt(s.hWall==null?2:s.hWall,1)+(s.rad?' + 5,5 (rayonnement)':'')+' W/m²K).</p>')
   +'<h2>Bouches de soufflage</h2><table><tr><th></th><th>Montage</th><th>Forme</th><th>Dim (m)</th><th>Q (m³/h)</th><th>v0 fab (m/s)</th><th>Portée fab (m)</th><th>Position x/y/z (m)</th></tr>'+rowsS(state.supplies)+'</table>'
   +'<h2>Reprises d’air</h2><table><tr><th></th><th>Montage</th><th>Forme</th><th>Dim (m)</th><th>Q (m³/h)</th><th>Position x/y/z (m)</th></tr>'+rows('R',state.extracts)+'</table>'
-  +'<h2>Mobilier / obstacles / cloisons</h2><table><tr><th>Nom</th><th>x / y / z (m)</th><th>L × l × H (m)</th></tr>'+state.mobilier.map(m=>'<tr><td>'+esc(m.nom)+'</td><td>'+fmt(m.x,2)+' / '+fmt(m.y,2)+' / '+fmt(m.z,2)+'</td><td>'+m.L+' × '+m.l+' × '+m.H+'</td></tr>').join('')+'</table>'
+  +'<h2>Mobilier / obstacles / cloisons</h2><table><tr><th>Nom</th><th>x / y / z (m)</th><th>L × l × H (m)</th><th>Charge (W)</th></tr>'+state.mobilier.map(m=>'<tr><td>'+esc(m.nom)+'</td><td>'+fmt(m.x,2)+' / '+fmt(m.y,2)+' / '+fmt(m.z,2)+'</td><td>'+m.L+' × '+m.l+' × '+m.H+'</td><td>'+fmt(m.pW||0,0)+'</td></tr>').join('')+'</table>'
   +'<h2>Résultats (régime permanent)</h2><div class="kpi">'
   +'<div><b>'+fmt(R.tauN/60,1)+' min</b>τ nominal V/Q</div>'
   +'<div><b>'+fmt(R.ACH,1)+' vol/h</b>Renouvellement ACH</div>'
@@ -2097,13 +2205,15 @@ function genererRapport(){
   +'<div><b>'+fmt(R.oz.pctOk,0)+' %</b>Zone occ. balayage ≥ 100 %</div>'
   +'<div><b>'+fmt(R.bilanAge/60,1)+' min</b>Âge aux reprises (bilan ≈ τN)</div>'
   +'<div><b>'+fmt((R.depWin||0)+(R.depInf||0),0)+' W</b>Déperditions fenêtres (conduction '+fmt(R.depWin||0,0)+' W + infiltration '+fmt(R.depInf||0,0)+' W)</div>'
+  +'<div><b>'+fmt(R.qInt||0,0)+' W</b>Apports internes (charge mobilier)</div>'
+  +'<div><b>'+fmt((R.depWin||0)+(R.depInf||0)-(R.qInt||0),0)+' W</b>Bilan thermique net (pertes − apports)</div>'
   +'<div><b>'+R.divRes.toExponential(1)+'</b>Résidu max de ∇·v − S</div>'
   +'</div>'
   +'<h2>Convergence et avertissements</h2><p>Résolution en régime permanent par itération jusqu’à convergence : '+(sim.conv?esc(sim.conv.join(' · ')):'')+'. Résidu de divergence max : '+sim.res.divRes.toExponential(1)+'. Bilan aux reprises : '+fmt(sim.res.bilanAge/60,1)+' min (théorie : τN = '+fmt(sim.res.tauN/60,1)+' min).'+(sim.connected===false?' <b style="color:#c00">ATTENTION : aucun chemin d’air soufflage → reprise (volume scindé ?).</b>':'')+(sim.warn&&sim.warn.length?'<br>'+sim.warn.map(esc).join('<br>'):'')+'</p>'
   +'<h2>Vue 3D isométrique — pièce, mobilier, fenêtres, bouches, lignes de courant</h2><img src="'+isoImg+'">'
   +'<h2>Heat maps — '+GRAND_LABEL[s.grandeur]+' — une tranche tous les 0,5 m</h2>'
   +imgs.map(o=>'<h3 style="font-size:12px;margin:10px 0 4px">Tranche z = '+fmt(o.z,2)+' m</h3><img src="'+o.src+'">').join('')
-  +'<h2>Méthodologie et limites</h2><p>Modèle eulérien en régime permanent sur grille 3D (les cellules hors du polygone de la pièce sont solides) : écoulement potentiel (sources aux soufflages, puits aux reprises, parois sans pénétration) + jets analytiques (1/x rond, 1/√x fente, expansion conique gaussienne ; v0 et portée calibrées sur les données fabricant si renseignées, sinon v0 = Q/(0,65·section) et noyau K·d, K = 6,2), puis projection de Helmholtz garantissant ∇·v = S et v·n = 0 aux parois. Âge de l’air et température résolus en permanent (advection upwind + diffusion turbulente ν<sub>t</sub> = ν<sub>t0</sub> + c·|v|·d<sub>paroi</sub>), couplage flottabilité de Boussinesq faible en 2 passes. <b>Fenêtres</b> : les faces de bord concernées échangent avec la température extérieure à U (W/m²K) ; l’infiltration éventuelle est une entrée d’air neuf (âge 0) à T extérieure, le débit extrait total = soufflage + infiltration. <b>Couleurs</b> : bleu = froid / petit / faible, rouge = chaud / grand / élevé, sur toutes les grandeurs. Taux de balayage local = τN / âge local. Outil d’aide au dimensionnement — ne remplace pas une étude CFD réglementaire (RE2020, NF EN 16798-1, ASHRAE 62.1).</p>'
+  +'<h2>Méthodologie et limites</h2><p>Modèle eulérien en régime permanent sur grille 3D (les cellules hors du polygone de la pièce sont solides) : écoulement potentiel (sources aux soufflages, puits aux reprises, parois sans pénétration) + jets analytiques (1/x rond, 1/√x fente, expansion conique gaussienne ; v0 et portée calibrées sur les données fabricant si renseignées, sinon v0 = Q/(0,65·section) et noyau K·d, K = 6,2), puis projection de Helmholtz garantissant ∇·v = S et v·n = 0 aux parois. Âge de l’air et température résolus en permanent (advection upwind + diffusion turbulente ν<sub>t</sub> = ν<sub>t0</sub> + c·|v|·d<sub>paroi</sub>), couplage flottabilité de Boussinesq faible en 2 passes. <b>Fenêtres</b> : les faces de bord concernées échangent avec la température extérieure à U (W/m²K) ; l’infiltration éventuelle est une entrée d’air neuf (âge 0) à T extérieure, le débit extrait total = soufflage + infiltration. <b>Couleurs</b> : bleu = froid / petit / faible, rouge = chaud / grand / élevé, sur toutes les grandeurs. Taux de balayage local = τN / âge local. <b>Phase 3</b> : couplage flottabilité Boussinesq en plusieurs passes (réglable, section conditions), sillage optionnel des obstacles (déficit de vitesse dans un cône en aval des meubles, re-projection pour conserver la masse), apports internes (charge W du mobilier répartie sur les cellules fluides au contact), rayonnement de parois linéarisé (h + 5,5 W/m²K si activé) et infiltration par perméabilité Q4Pa (Q = Q4Pa·S·(ΔP/4)^(2/3), ΔP supposé). Outil d’aide au dimensionnement — ne remplace pas une étude CFD réglementaire (RE2020, NF EN 16798-1, ASHRAE 62.1).</p>'
   +'</body></html>';
   $('#overlay').hidden=false;
   $('#repFrame').srcdoc=rapportHTML;

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>État des lieux — Simulation de balayage de ventilation</title>
+<style>
+:root{--bg:#0f1620;--panel:#182230;--bord:#2c3a4f;--txt:#e8eef6;--mut:#9fb0c3;--acc:#38bdf8;--warn:#fbbf24;--danger:#f87171}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.6 "Segoe UI",Arial,sans-serif}
+header{background:linear-gradient(90deg,#0b3b5c,#0f5e46);padding:14px 22px}
+header h1{margin:0;font-size:18px}
+header p{margin:2px 0 0;color:#cfe6ef;font-size:12px}
+main{max-width:900px;margin:0 auto;padding:18px 22px 60px}
+h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--acc);border-bottom:1px solid var(--bord);padding-bottom:4px;margin:26px 0 10px}
+ul,ol{padding-left:22px}
+li{margin:5px 0}
+code{background:var(--panel);border:1px solid var(--bord);border-radius:5px;padding:1px 6px;font-size:12.5px}
+.crit{color:var(--danger);font-weight:600}
+.warn{color:var(--warn);font-weight:600}
+.ok{color:#34d399;font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:8px 0}
+th,td{border-bottom:1px solid var(--bord);padding:5px 8px;text-align:left}
+th{color:var(--mut)}
+.bar{display:flex;gap:14px;padding:10px 22px;background:var(--panel);border-bottom:1px solid var(--bord)}
+.bar a{color:var(--acc)}
+</style>
+</head>
+<body>
+<header>
+  <h1>État des lieux — Simulation de balayage de ventilation</h1>
+  <p>2026-11-26 · audit Vibe : relecture du code + tests headless (Node 22, worker rejoué tel quel)</p>
+</header>
+<div class="bar">
+  <a href="/simulateur">← Simulateur</a>
+  <a href="/simulateur.html">Simulateur en plein écran</a>
+  <a href="https://github.com/Xianos51/Simulation-balayage-ventilation-">Dépôt GitHub</a>
+</div>
+<main>
+<h2>1. État du projet</h2>
+<ul>
+  <li><b>Dépôt</b> : <code>Xianos51/Simulation-balayage-ventilation-</code> (public). <b>Branche par défaut : <code>vibe/sim-balayage-html-d11000</code></b> (commit <code>d633d37</code>, phase 4 du 2026-11-26). La branche <code>main</code> est en retard et porte un fichier cassé (bug n°1).</li>
+  <li><b>Livrable</b> : <code>index.html</code>, fichier unique 100 % autonome (134 372 octets, un seul script inline, zéro dépendance, zéro appel réseau) → fonctionne en <code>file://</code> comme en HTTP.</li>
+  <li><b>Moteur</b> : eulérien permanent sur grille 3D (potentiel + jets analytiques + projection de Helmholtz), âge et température en permanent (Boussinesq faible), Web Worker inline, heat map WebGL avec repli CPU, vue 3D, multi-pièces, polygones éditables, fenêtres/infiltration, v0/portée fabricant, scénarios, historique, comparaison, exports JSON/CSV/PNG/rapport/URL.</li>
+  <li><b>Validation rejouée</b> : cas défaut res 0,25 m → τN = 1248 s, ACH = 2,88, résidu ∇·v−S = 6,3e-8, ERE = 179 % ; infiltration 30 m³/h à Text = 5 °C → 150,75 W (attendu 150,8 W) ; volume scindé → avertissement OK ; <code>node --check</code> OK ; chargement sans erreur runtime.</li>
+</ul>
+<h2>2. Bugs et points de vigilance</h2>
+<ol>
+  <li><span class="crit">CRITIQUE</span> — <b>Branche <code>main</code> : <code>index.html</code> tronqué</b> (62 199 octets, aucune balise <code>&lt;/script&gt;</code>, fichier coupé au milieu de <code>solveTransport()</code>) : depuis <code>main</code> le script ne s'exécute jamais, la page est morte. La branche par défaut porte le fichier complet. <b>Action</b> : pousser le bon fichier sur <code>main</code> et remettre <code>main</code> par défaut.</li>
+  <li><span class="warn">Bloquant</span> — <b>GitHub Pages non activé</b> (API <code>/pages</code> → 404) : l'URL en ligne du README ne répond pas. <b>Action</b> : <code>Settings → Pages → branche par défaut → /</code>.</li>
+  <li><span class="warn">Hygiène</span> — branche par défaut = nom de branche de session ; PR #4 fermée sans merge après push direct.</li>
+  <li><span class="warn">Mineur</span> — <code>copierURL()</code> en <code>file://</code> : <code>location.origin</code> = <code>"null"</code> (Firefox) → URL de partage invalide hors ligne. Piste : <code>location.href.split('#')[0]</code>.</li>
+  <li><span class="warn">Risque</span> — historique des runs : <code>serializeRun()</code> stocke tous les champs 3D en JSON (jusqu'à ~2 Mo/run × 30) → quota <code>localStorage</code> dépassé, échec <b>silencieux</b> (try/catch vide). Piste : ne garder que les métriques + champs sous-échantillonnés, ou compresser.</li>
+  <li><span class="ok">Vérifiés OK</span> : détection « volume scindé », avertissement « ouverture dans un obstacle », garde « au moins une reprise » dans <code>resoudre()</code>, non-régression res 0,25 m, polygone, déperditions fenêtre/infiltration.</li>
+</ol>
+<h2>3. Publication en Mistral App</h2>
+<ul>
+  <li>App <code>simulation-balayage-ventilation</code> packagée dans ce dépôt (<code>mistral.json</code> à la racine, module <code>web</code>).</li>
+  <li><code>/</code> → <code>/simulateur</code> : simulateur en iframe plein écran ; <code>/simulateur.html</code> en plein écran ; ce rapport sur <code>/etat-des-lieux.html</code>.</li>
+  <li>Déploiement : <code>mistral deploy</code> depuis la racine (org « Perso »), puis publication au catalogue (<code>publish_app</code>, env <code>production</code>).</li>
+</ul>
+</main>
+</body>
+</html>

@@ -1,7 +1,7 @@
 # ROADMAP — Simulateur de balayage de ventilation
 
 Projet : `Xianos51/Simulation-balayage-ventilation-` (GitHub, public)
-Dernière mise à jour : 2026-11-26
+Dernière mise à jour : 2026-11-27
 
 ---
 
@@ -296,6 +296,7 @@ les métriques de référence restent celles de la phase 2 (voir validation ci-d
 
 | Date | Décision | Raison |
 |---|---|---|
+| 2026-11-27 | **Bug fix affichage** : la heat map de vitesse était uniformément bleue — `fieldScale('vit')` calculait son P95 sur la grandeur affichée au moment de l'appel (les particules 3D l'appellent dès la fin de la résolution, alors que « balayage » est affiché) et mettait en cache une borne de ~322 « m/s » pour tout le run ; `grandeurVal(c, g)` prend désormais la grandeur demandée en paramètre et chaque grandeur a sa propre échelle | retour utilisateur : « peu importe la configuration, la vitesse est toujours bleue partout » ; headless : échelle vitesse 322,8 → 0,5 m/s, jets visibles (max 0,77 m/s en rouge), variation entre tranches confirmée (0,17 à z=2,3 contre 0,68 à z=1,1) |
 | 2026-11-21 | Déploiement = GitHub Pages + fichier HTML autonome téléchargeable | contrainte « aucune installation sur le PC pro » ; partage par URL |
 | 2026-11-21 | **Travail 100 % en local pour l'instant ; push GitHub uniquement à la fin, quand l'utilisateur est satisfait** | le repo local (`~/Documents/vibe/Simulation-balayage-ventilation-`) est la source de vérité pendant le développement ; GitHub Pages sera activé au moment du push final |
 | 2026-11-21 | Métriques = modèle eulérien permanent sur grille, pas de lagrangien | le lagrangien ne garantit pas ∇·v = 0 et biaise l'âge (émission unique à t=0) |

@@ -1900,10 +1900,12 @@ function drawField(tranche){
     gl.viewport(0,0,W,H);
     const data=new Uint8Array(nx*ny*4);
     const noSim=!(sim&&sim.age);
+    const polyNow=G.N?polyOf(state.room):null;
     for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
       const q=(j*nx+i)*4;
       const c=G.N?idx(i,j,k):i+nx*(j+ny*k);
       if(G.N&&G.solid[c]){data[q+3]=0;continue;}
+      if(polyNow&&!pointInPoly((i+0.5)*gd.res,(j+0.5)*gd.res,polyNow)){data[q+3]=0;continue;}
       const val=noSim?0:grandeurVal(c);
       data[q]=val==null?0:Math.round(clamp(tOf(g,val),0,1)*255);
       data[q+3]=255;
@@ -1928,12 +1930,14 @@ function drawField(tranche){
 function drawFieldCPU(ctx,W,H,tranche,g){
   const v=G.view||computeLayout(W,H);
   const gd=gridDims(),nx=gd.nx,ny=gd.ny,res=gd.res,k=trancheK(tranche);
+  const polyNow=G.N?polyOf(state.room):null;
   ctx.fillStyle='#0b1220';ctx.fillRect(0,0,W,H);
   const px=x=>v.ox+(x-v.x0)*v.s, py=y=>v.oy+(y-v.y0)*v.s;
   for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
     const c=G.N?idx(i,j,k):i+nx*(j+ny*k);
     const x=px(i*res),y=py(j*res),w=res*v.s+0.6;
     if(G.N&&G.solid[c])ctx.fillStyle='#39445a';
+    else if(polyNow&&!pointInPoly((i+0.5)*res,(j+0.5)*res,polyNow))ctx.fillStyle='#39445a';
     else{
       const val=grandeurVal(c);
       ctx.fillStyle=val==null?'#141d2b':colorScale(g,val);
@@ -2100,6 +2104,7 @@ function draw3DScene(ctx,w,h,camObj,opts){
     for(let j=0;j<G.ny;j++)for(let i=0;i<G.nx;i++){
       const c=idx(i,j,0);
       if(G.wall&&G.wall[c])continue;
+      if(!G.solid[c]&&!pointInPoly((i+0.5)*res,(j+0.5)*res,poly))continue;
       const Q=[P(i*res,j*res,0),P((i+1)*res,j*res,0),P((i+1)*res,(j+1)*res,0),P(i*res,(j+1)*res,0)];
       ctx.beginPath();ctx.moveTo(Q[0][0],Q[0][1]);
       for(let q=1;q<4;q++)ctx.lineTo(Q[q][0],Q[q][1]);
@@ -2381,7 +2386,10 @@ function attach2D(){
     drag=null;
     if(wasPlan){afterPolyEdit();}
     renderSupplies();renderExtracts();renderMobilier();renderWindows();saveLocal();drawHeatmap();render3D();
-    if(wasObj&&!solving){const el=$('#chkApercu');if(el&&el.checked)resoudre();}
+    if(!solving){
+      if(wasPlan)resoudre(); /* la grille a changé : l'ancien champ n'a plus de sens, on recalcule */
+      else{const el=$('#chkApercu');if(el&&el.checked)resoudre();}
+    }
   });
   // Tooltip au survol : valeur exacte de la cellule sous le curseur
   const tip=document.createElement('div');

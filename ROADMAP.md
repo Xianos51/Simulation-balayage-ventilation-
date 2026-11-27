@@ -228,7 +228,7 @@ les métriques de référence restent celles de la phase 2 (voir validation ci-d
 | Cas | Résultat | Verdict |
 |---|---|---|
 | Non-régression masse/τN (cas 1, défauts) | τN = 1248 s exact, résidu div 6,3e-8 | OK |
-| Nouvelle référence thermique (signe corrigé) | âge moyen 9,6 min, ERE 216 % (vs 181 % avant correction — piston renforcé par la plongée de l'air froid) | documenté |
+| Nouvelle référence thermique (signe corrigé + jets de paroi) | âge moyen 9,3 min, ERE 222 % (piston renforcé : l'air froid plonge, se répand au sol et balaie la pièce) | documenté |
 | Apports internes 800 W | qInt = 800 W exact, T occ +2,8 K | OK |
 | Perméabilité Q4Pa | Qinf/depInf/τN exacts au 0,1 près | OK |
 | Couplage 5 passes | converge (7,6e-8), stratification amplifiée | OK |
@@ -253,6 +253,33 @@ les métriques de référence restent celles de la phase 2 (voir validation ci-d
 - Tests headless (jsdom, 17 vérifications) : scène remplie (1 555 couleurs au sol),
   meubles en volume, particules qui avancent, démo rotation/tranche, aperçu pendant le
   drag + refus rapport + résolution complète au relâchement, iso du rapport remplie.
+
+### P3.8 — Retouches présentation et physique des jets (2026-11-26, retour utilisateur)
+- **Souris 3D en convention standard** (type OrbitControls) : glisser à droite = la caméra
+  orbite à droite (avant : sens inversé) ; glisser vers le bas = vue de dessus accrue.
+- **Murs du fond visibles** : le test de visibilité des parois était inversé (on dessinait
+  les parois proches en fantôme et les parois du fond disparaissaient) ; corrigé — on
+  regarde désormais DANS la pièce, parois du fond remplies, fenêtres ambrées sur les bords
+  du fond.
+- **Jets : rebond et dispersion sur les surfaces** (retour « l'air ne rebondit pas ») :
+  la marche du jet est réécrite en segments — chaque impact (paroi du domaine ou obstacle)
+  fait naître un **jet de paroi** : étalement dans le plan de la surface + légère composante
+  de rebond (0,35 pour l'air chaud/flottant, **0,15 pour l'air froid** qui s'étale au sol au
+  lieu de remonter), perte d'énergie (v×0,5 par choc), élargissement ×2,2, décroissance
+  repartant de l'impact, **2 rayons à 90° sur impact quasi normal** (éventail radial du
+  diffuseur plafond), jusqu'à 3 rebonds. Dépôt par quantité de mouvement (w·v) : le jet
+  direct prime sur les passages réfléchis.
+  Bug corrigé au passage : la normale d'impact pointait DANS la paroi (le rebond traversait
+  le sol). Vérifié headless : étalement latéral au sol 0,89 m/s, rebond 0,35 m/s, flux de
+  retour le long du mur opposé 0,06 m/s, masse conservée (5,8e-8), bilan aux reprises
+  42 % de τN (cohérent avec la référence historique ~53 %, court-circuit plafond-plafond).
+  Nouvelle référence du cas 1 : **ERE 222 %, âge moyen 9,3 min** (τN et masse inchangés).
+- **⚡ Aperçu instantané sans freeze** : la prévision rapide est déplacée dans le
+  **Web Worker** (commande `preview`, itérations réduites 1500/1800, tolérance 3e-4) —
+  plus aucun travail lourd sur le thread principal ; demandes périmées ignorées (seq),
+  worker d'aperçu tué à chaque nouvelle demande et avant toute résolution complète.
+- **Rapport compact** : heat maps des tranches rendues en 720×525 et affichées
+  **2 par rangée** (grille CSS) → moitié moins de pages.
 
 ### Phase 3 — restant reporté (décision du 2026-11-26)
 - **NS complète (projection de Chorin + k-ε/LES) en WebGPU/WASM** : reporté. Raisons :
@@ -283,6 +310,7 @@ les métriques de référence restent celles de la phase 2 (voir validation ci-d
 | 2026-11-22 | **P2.7 livrée en local** : fenêtres sur les parois + température extérieure (Robin U·Text, infiltration = air neuf à Text rééquilibrée sur les reprises, τN = V/(Q+Qinf), déperditions depWin/depInf) + v0/portée fabricant par bouche (calibrage du noyau du jet à vTerm) | demande utilisateur « avant la prochaine phase » : thermique réaliste avec l’extérieur et jets fidèles aux données fabricant ; non-régression res 0,25 validée (voir P2.7), écart ERE expliqué par la correction T=Tsouf aux soufflages |
 | 2026-11-22 | **Bug fix** : le sélecteur « Grandeur affichée » (section 7) ne changeait jamais la heat map — `updSim` ne retenait que les valeurs numériques (`parseFloat('vit')` = NaN → affectation sautée, grandeur restait « balayage ») | remontée utilisateur : la heat map affichait toujours le balayage en vitesse/température ; corrigé (affectation directe pour `grandeur`), vérifié headless : grandeur = vit/temp/age OK et `grandeurVal` retourne bien la bonne grandeur |
 | 2026-11-26 | **Phase 3 (partie applicable) livrée** : couplage flottabilité multi-passes réglable, sillage d'obstacles opt-in, apports internes du mobilier, h parois + rayonnement linéarisé, perméabilité Q4Pa (NF EN 12207) avec ΔP supposé, échelle de couleur adaptative (P95) — toutes les nouveautés neutres par défaut (non-régression validée) | demande utilisateur « implémente les futures phases » ; le solveur NS WebGPU complet est reporté avec justification (voir phase 3) |
+| 2026-11-26 | **P3.8 retours utilisateur présentation** : souris 3D en convention OrbitControls, murs du fond visibles (test de visibilité inversé), jets avec rebond/étalement en jet de paroi (rebond modulé par la flottabilité, éventail à 90° sur impact normal), aperçu instantané déplacé dans le Web Worker (zéro freeze), rapport avec heat maps 720×525 en 2 colonnes | retours : déplacement non naturel, murs opposés absents, flux trop linéaire (pas de rebond/dispersion), rapport trop long, aperçu figeait la page |
 | 2026-11-26 | **P3.7 mode présentation** : vue 3D en volume (faces remplies, sol heat map, cônes de jets), particules animées le long des lignes de courant, ⚡ aperçu instantané pendant le déplacement des bouches (résolution complète au relâchement), ▶ mode démo (rotation auto + balayage de tranche) | demande utilisateur : « visualisation attrayante en quasi temps réel pour montrer aux clients » — canvas 2D pur pour rester fichier unique universel (WebGL brut gardé en réserve) |
 | 2026-11-26 | **Bug fix physique** : le signe de la flottabilité de Boussinesq était inversé (l'air chaud descendait, l'air froid montait) ; corrigé + nouvelle référence du cas 1 (ERE 181 → 216 %, âge moyen 11,6 → 9,6 min, τN inchangé) | trouvée en implémentant la phase 3 : la stratification chauffage/refroidissement était dans le mauvais sens ; headless : chaud en haut en chauffage, froid en bas en refroidissement |
 | 2026-11-22 | **Bug fix affichage température** : l'échelle de couleurs « temp » allait de Text à max(Tsouf,Tamb)+1 → avec Text = 5 °C, toute la plage utile (17–22 °C) était écrasée en bleu uniforme. Corrigé : échelle = min/max réellement résolus du champ (`tempScale()`, cachée par run). Ajouts UX : **tooltip au survol** de la heat map (valeur exacte par cellule x,y,z) et **bandeau ⚠ « configuration modifiée depuis la dernière résolution »** quand on édite la config après un run (18 saisies + updSim marquées) | remontée utilisateur : heat map température « uniformément 17 °C » alors que soufflage à 22 °C ; cause = échelle élargie par Text + run non relancé après changement de Tsouf ; vérifié headless : échelle 18,8–22,2, 24 couleurs distinctes sur un dégradé 19→22 °C, ⚠ déclenché par updRoom mais pas par grandeur/tranche |

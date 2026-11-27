@@ -51,16 +51,18 @@ Deux façons, sans rien installer (un navigateur suffit) :
    vue 3D de présentation en volume (sol coloré par le champ, cônes de jets, lignes de
    courant et **particules animées** à la vitesse locale), **▶ Mode démo** (rotation
    automatique de la caméra + balayage de la tranche z — pour les présentations clients),
-   **⚡ aperçu instantané** : la heat map se met à jour en < 1 s pendant qu'on déplace
-   bouches/reprises/meubles à la souris, et la résolution complète se lance au relâchement,
-   indicateurs chiffrés en haut.
+   **⚡ aperçu instantané** (calculé dans le Web Worker, sans blocage) : la heat map se met
+   à jour en < 1 s pendant qu'on déplace bouches/reprises/meubles à la souris, et la
+   résolution complète se lance au relâchement, indicateurs chiffrés en haut. Les
+   **jets rebondissent** : au contact d'une paroi ou d'un obstacle, l'air s'étale en
+   jet de paroi (éventail radial, rebond atténué pour l'air froid) et se disperse.
 8. **Scénarios enregistrés** : sauvegardez la configuration courante sous un nom
    (localStorage), rechargez-la plus tard, supprimez-la.
 9. **Historique des runs** : chaque résolution est archivée automatiquement (30 derniers runs)
    avec ses métriques ; rechargez un run en un clic.
 10. **Comparer deux runs** : sélectionnez deux runs (actuel ou archivés) et obtenez un
     tableau comparatif des métriques avec les deltas colorés.
-11. **Export** : rapport HTML imprimable (PDF), heat map PNG, **champs 3D CSV** (x,y,z,âge,
+11. **Export** : rapport HTML imprimable (PDF, heat maps compactes 2 par rangée), heat map PNG, **champs 3D CSV** (x,y,z,âge,
     balayage, température, vitesse), scénario JSON (import/export), URL de partage (config dans le hash).
 
 ## Lecture des indicateurs

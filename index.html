@@ -1072,47 +1072,108 @@ function addJets(){
     for(let ns=0;ns<nStart;ns++){
       const t=nStart===1?0:((ns/(nStart-1))*2-1)*halfL;
       const p0=[s.p[0]+ax.long[0]*t,s.p[1]+ax.long[1]*t,s.p[2]+ax.long[2]*t];
-      for(let sd=step;sd<maxS;sd+=step){
-      const x=p0[0]+d[0]*sd,y=p0[1]+d[1]*sd,z=p0[2]+d[2]*sd;
-      if(x<bb.x0||y<bb.y0||z<0||x>bb.x1||y>bb.y1||z>r.H)break;
-      const vc=sd<=sCore?v0:(isSlot?v0*Math.sqrt(sCore/sd):v0*sCore/sd);
-      if(coanda&&vc<coanda.until)coanda=null; // le jet se détache
-      const rad=Math.max(dim/2,0.02)+sd*spread;
-      const i0=Math.max(1,Math.floor((x-rad)/res)),i1=Math.min(nx-1,Math.ceil((x+rad)/res));
-      const j0=Math.max(0,Math.floor((y-rad)/res)),j1=Math.min(ny-1,Math.ceil((y+rad)/res));
-      const k0=Math.max(0,Math.floor((z-rad)/res)),k1=Math.min(nz-1,Math.ceil((z+rad)/res));
-      for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
-        for(const fi of [i,i+1]){
-          if(fi<1||fi>nx-1)continue;
-          const a=idx(fi-1,j,k),b2=idx(fi,j,k);
-          if(G.solid[a]||G.solid[b2])continue;
-          const dd=(fi*res-x)**2+((j+0.5)*res-y)**2+((k+0.5)*res-z)**2;
-          if(dd>rad*rad)continue;
-          const w=Math.exp(-dd/(rad*rad)),q=fxi(fi,j,k);
-          if(w>bwX[q]){bwX[q]=w;bvX[q]=vc*d[0];}
+      /* Marche du jet par SEGMENTS : chaque impact (paroi du domaine ou obstacle) fait
+         renaître un jet de paroi (étalement dans le plan de la surface, légère composante
+         de rebond, perte d'énergie, élargissement). Impact quasi normal = 2 rayons à 90°
+         (éventail radial, cas du diffuseur plafond vertical). Décroissance par jambe. */
+      const march=(cur,dirv,vc0,sl,spread2,bounce)=>{
+        const nSteps=Math.ceil(maxS/step);
+        for(let it2=0;it2<nSteps;it2++){
+          const nxt=[cur[0]+dirv[0]*step,cur[1]+dirv[1]*step,cur[2]+dirv[2]*step];
+          let col=null;
+          /* col = normale de la surface orientée vers la PIÈCE (opposée à la direction du vol) */
+          if(nxt[0]<bb.x0||nxt[0]>bb.x1)col=[(dirv[0]>0?-1:1),0,0];
+          else if(nxt[1]<bb.y0||nxt[1]>bb.y1)col=[0,(dirv[1]>0?-1:1),0];
+          else if(nxt[2]<0||nxt[2]>r.H)col=[0,0,(dirv[2]>0?-1:1)];
+          else{
+            const ci2=clamp(Math.floor(nxt[0]/res),0,nx-1),cj2=clamp(Math.floor(nxt[1]/res),0,ny-1),ck2=clamp(Math.floor(nxt[2]/res),0,nz-1);
+            if(G.solid[idx(ci2,cj2,ck2)]){
+              const ax2=(Math.abs(dirv[0])>=Math.abs(dirv[1])&&Math.abs(dirv[0])>=Math.abs(dirv[2]))?0:(Math.abs(dirv[1])>=Math.abs(dirv[2])?1:2);
+              col=[0,0,0];col[ax2]=(dirv[ax2]>0?-1:1);
+            }
+          }
+          if(col){
+            const b2=bounce+1;
+            if(b2>3)return [];
+            const dn2=dirv[0]*col[0]+dirv[1]*col[1]+dirv[2]*col[2];
+            let tt=[dirv[0]-dn2*col[0],dirv[1]-dn2*col[1],dirv[2]-dn2*col[2]];
+            let tl=Math.hypot(tt[0],tt[1],tt[2]);
+            const normalImpact=tl<0.35;
+            if(normalImpact){ /* impact quasi normal : direction latérale dans le plan (éventail) */
+              const ang=(state.sim.seed%10)*0.7+ns*2.4+b2*1.3;
+              if(Math.abs(col[2])>0.5)tt=[Math.cos(ang),Math.sin(ang),0];
+              else{
+                const u3=Math.abs(col[0])<0.5?[1,0,0]:[0,1,0];
+                const u3u=u3[0]*col[0]+u3[1]*col[1]+u3[2]*col[2];
+                const U3=[u3[0]-u3u*col[0],u3[1]-u3u*col[1],u3[2]-u3u*col[2]];
+                const U3l=Math.hypot(U3[0],U3[1],U3[2])||1;
+                const U3n=[U3[0]/U3l,U3[1]/U3l,U3[2]/U3l];
+                const V3=[col[1]*U3n[2]-col[2]*U3n[1],col[2]*U3n[0]-col[0]*U3n[2],col[0]*U3n[1]-col[1]*U3n[0]];
+                tt=[U3n[0]*Math.cos(ang)+V3[0]*Math.sin(ang),U3n[1]*Math.cos(ang)+V3[1]*Math.sin(ang),U3n[2]*Math.cos(ang)+V3[2]*Math.sin(ang)];
+              }
+              tl=Math.hypot(tt[0],tt[1],tt[2])||1;
+            }
+            tt=[tt[0]/tl,tt[1]/tl,tt[2]/tl];
+            /* rebond atténué pour l'air froid (plus lourd : il s'étale au sol au lieu de remonter) */
+            const reb=(state.room.Tsouf>=state.room.Tamb)?0.35:0.15;
+            let nv=[tt[0]*0.85+col[0]*reb,tt[1]*0.85+col[1]*reb,tt[2]*0.85+col[2]*reb];
+            const nvl=Math.hypot(nv[0],nv[1],nv[2])||1;
+            nv=[nv[0]/nvl,nv[1]/nvl,nv[2]/nvl];
+            const legs=[{cur:cur.slice(),dirv:nv,vc0:vc0*0.5,sl:0,spread2:spread2*2.2,bounce:b2}];
+            if(normalImpact){ /* 2e raye à 90° dans le plan de la surface */
+              const nv2=[col[1]*nv[2]-col[2]*nv[1],col[2]*nv[0]-col[0]*nv[2],col[0]*nv[1]-col[1]*nv[0]];
+              legs.push({cur:cur.slice(),dirv:nv2,vc0:vc0*0.5,sl:0,spread2:spread2*2.2,bounce:b2});
+            }
+            return legs;
+          }
+          cur=nxt;sl+=step;
+          const x=cur[0],y=cur[1],z=cur[2];
+          const vc=sl<=sCore?vc0:(isSlot?vc0*Math.sqrt(sCore/sl):vc0*sCore/sl);
+          if(coanda&&vc<coanda.until)coanda=null; // le jet se détache
+          const rad=Math.max(dim/2,0.02)+sl*spread2;
+          const i0=Math.max(1,Math.floor((x-rad)/res)),i1=Math.min(nx-1,Math.ceil((x+rad)/res));
+          const j0=Math.max(0,Math.floor((y-rad)/res)),j1=Math.min(ny-1,Math.ceil((y+rad)/res));
+          const k0=Math.max(0,Math.floor((z-rad)/res)),k1=Math.min(nz-1,Math.ceil((z+rad)/res));
+          for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
+            for(const fi of [i,i+1]){
+              if(fi<1||fi>nx-1)continue;
+              const a=idx(fi-1,j,k),b2=idx(fi,j,k);
+              if(G.solid[a]||G.solid[b2])continue;
+              const dd=(fi*res-x)**2+((j+0.5)*res-y)**2+((k+0.5)*res-z)**2;
+              if(dd>rad*rad)continue;
+              const w=Math.exp(-dd/(rad*rad)),q=fxi(fi,j,k);
+              if(w*vc>bwX[q]){bwX[q]=w*vc;bvX[q]=vc*dirv[0];} /* quantité de mouvement : le passage le plus fort gagne */
+            }
+            for(const fj of [j,j+1]){
+              if(fj<1||fj>ny-1)continue;
+              const a=idx(i,fj-1,k),b2=idx(i,fj,k);
+              if(G.solid[a]||G.solid[b2])continue;
+              const dd=((i+0.5)*res-x)**2+(fj*res-y)**2+((k+0.5)*res-z)**2;
+              if(dd>rad*rad)continue;
+              const w=Math.exp(-dd/(rad*rad)),q=fyi(i,fj,k);
+              if(w*vc>bwY[q]){bwY[q]=w*vc;bvY[q]=vc*dirv[1];}
+            }
+            for(const fk of [k,k+1]){
+              if(fk<1||fk>nz-1)continue;
+              const a=idx(i,j,fk-1),b2=idx(i,j,fk);
+              if(G.solid[a]||G.solid[b2])continue;
+              const dd=((i+0.5)*res-x)**2+((j+0.5)*res-y)**2+(fk*res-z)**2;
+              if(dd>rad*rad)continue;
+              const w=Math.exp(-dd/(rad*rad)),q=fzi(i,j,fk);
+              if(w*vc>bwZ[q]){bwZ[q]=w*vc;bvZ[q]=vc*dirv[2];}
+            }
+          }
         }
-        for(const fj of [j,j+1]){
-          if(fj<1||fj>ny-1)continue;
-          const a=idx(i,fj-1,k),b2=idx(i,fj,k);
-          if(G.solid[a]||G.solid[b2])continue;
-          const dd=((i+0.5)*res-x)**2+(fj*res-y)**2+((k+0.5)*res-z)**2;
-          if(dd>rad*rad)continue;
-          const w=Math.exp(-dd/(rad*rad)),q=fyi(i,fj,k);
-          if(w>bwY[q]){bwY[q]=w;bvY[q]=vc*d[1];}
-        }
-        for(const fk of [k,k+1]){
-          if(fk<1||fk>nz-1)continue;
-          const a=idx(i,j,fk-1),b2=idx(i,j,fk);
-          if(G.solid[a]||G.solid[b2])continue;
-          const dd=((i+0.5)*res-x)**2+((j+0.5)*res-y)**2+(fk*res-z)**2;
-          if(dd>rad*rad)continue;
-          const w=Math.exp(-dd/(rad*rad)),q=fzi(i,j,fk);
-          if(w>bwZ[q]){bwZ[q]=w;bvZ[q]=vc*d[2];}
-        }
+        return [];
+      };
+      let queue=[{cur:p0.slice(),dirv:d.slice(),vc0:v0,sl:0,spread2:spread,bounce:0}];
+      while(queue.length){
+        const leg=queue.shift();
+        if(leg.bounce>3)continue;
+        queue.push(...march(leg.cur,leg.dirv,leg.vc0,leg.sl,leg.spread2,leg.bounce));
       }
     }
-    }
-    for(let f=0;f<nfx;f++)if(bwX[f]>0)G.fx[f]+=bvX[f];
+        for(let f=0;f<nfx;f++)if(bwX[f]>0)G.fx[f]+=bvX[f];
     for(let f=0;f<nfy;f++)if(bwY[f]>0)G.fy[f]+=bvY[f];
     for(let f=0;f<nfz;f++)if(bwZ[f]>0)G.fz[f]+=bvZ[f];
   }
@@ -1464,11 +1525,13 @@ function buildWorkerCode(){
     +'  if(d.cmd==="stop"){stopFlag=true;return;}\n'
     +'  if(d.cmd==="pause"){paused=true;return;}\n'
     +'  if(d.cmd==="resume"){paused=false;return;}\n'
-    +'  if(d.cmd!=="solve")return;\n'
+    +'  if(d.cmd!=="solve"&&d.cmd!=="preview")return;\n'
     +'  try{\n'
     +'    state=d.state;\n'
     +'    RNG=mulberry32((state.sim.seed|0)||42);\n'
     +'    const simP=state.sim;\n'
+    +'    const fast=d.cmd==="preview";\n'
+    +'    const maxIt1=fast?1500:simP.maxIt,tol1=fast?3e-4:1e-7;\n'
     +'    const post=(o)=>self.postMessage(o);\n'
     +'    const checkPause=async()=>{while(paused&&!stopFlag){await new Promise(r=>setTimeout(r,120));}if(stopFlag)throw new Error("Résolution interrompue.");};\n'
     +'    const convLines=[];\n'
@@ -1476,26 +1539,26 @@ function buildWorkerCode(){
     +'    post({type:"progress",f:0.02,msg:"Construction de la grille…"});\n'
     +'    buildGrid();buildWindowData();computeSources();buildHeatSources();\n'
     +'    await checkPause();post({type:"progress",f:0.08,msg:"Champ potentiel (Poisson)…"});\n'
-    +'    let phi;stage("potentiel",()=>{phi=solvePoissonField(G.S,false,simP.maxIt,1e-7);});\n'
+    +'    let phi;stage("potentiel",()=>{phi=solvePoissonField(G.S,false,maxIt1,tol1);});\n'
     +'    vFromPhi(phi);\n'
     +'    await checkPause();post({type:"progress",f:0.20,msg:"Jets analytiques…"});\n'
     +'    addJets();\n'
     +'    await checkPause();post({type:"progress",f:0.32,msg:"Projection de Helmholtz…"});\n'
-    +'    stage("projection",()=>{project(simP.maxIt,1e-7);});\n'
+    +'    stage("projection",()=>{project(maxIt1,tol1);});\n'
     +'    cellVel();distParoi();computeNuT();\n'
-    +'    if(simP.wake){await checkPause();post({type:"progress",f:0.40,msg:"Sillage des obstacles (phase 3)…"});addWakes();stage("projection sillage",()=>{project(simP.maxIt,1e-7);});cellVel();computeNuT();}\n'
+    +'    if(simP.wake){await checkPause();post({type:"progress",f:0.40,msg:"Sillage des obstacles (phase 3)…"});addWakes();stage("projection sillage",()=>{project(maxIt1,tol1);});cellVel();computeNuT();}\n'
     +'    await checkPause();post({type:"progress",f:0.45,msg:"Âge de l’air (permanent)…"});\n'
-    +'    let ageN;stage("âge",()=>{ageN=solveTransport("age",simP.maxIt,1e-7);});\n'
+    +'    let ageN;stage("âge",()=>{ageN=solveTransport("age",maxIt1,tol1);});\n'
     +'    await checkPause();post({type:"progress",f:0.58,msg:"Température (permanent)…"});\n'
-    +'    let tempN;stage("température",()=>{tempN=solveTransport("T",simP.maxIt,1e-7);});\n'
-    +'    const nC=clamp(Math.round(simP.nCoupl||2),2,8);\n'
+    +'    let tempN;stage("température",()=>{tempN=solveTransport("T",maxIt1,tol1);});\n'
+    +'    const nC=fast?2:clamp(Math.round(simP.nCoupl||2),2,8);\n'
     +'    for(let p=2;p<=nC;p++){\n'
     +'      await checkPause();post({type:"progress",f:0.70+0.24*(p-1)/nC,msg:"Couplage flottabilité (passe "+p+"/"+nC+")…"});\n'
     +'      addBuoyancy(tempN);\n'
-    +'      stage("projection "+p,()=>{project(simP.maxIt,1e-7);});\n'
+    +'      stage("projection "+p,()=>{project(maxIt1,tol1);});\n'
     +'      cellVel();computeNuT();\n'
-    +'      await checkPause();stage("âge "+p,()=>{ageN=solveTransport("age",simP.maxIt,1e-7);});\n'
-    +'      stage("température "+p,()=>{tempN=solveTransport("T",simP.maxIt,1e-7);});\n'
+    +'      await checkPause();stage("âge "+p,()=>{ageN=solveTransport("age",maxIt1,tol1);});\n'
+    +'      stage("température "+p,()=>{tempN=solveTransport("T",maxIt1,tol1);});\n'
     +'    }\n'
     +'    sim={age:ageN,temp:tempN,streams:[],conv:convLines.slice(),warn:(G.warn||[]).slice()};\n'
     +'    computeResults();\n'
@@ -1503,13 +1566,13 @@ function buildWorkerCode(){
     +'    sim.connected=checkConnectivity();\n'
     +'    if(!sim.connected)sim.warn.push("ATTENTION : aucun chemin d’air des soufflages vers les reprises (volume scindé ?) — le résultat n’est pas physique.");\n'
     +'    post({type:"progress",f:1,msg:"Terminé."});\n'
-    +'    post({type:"done",\n'
+    +'    post({type:"done",preview:fast,seq:d.seq,\n'
     +'      G:{nx:G.nx,ny:G.ny,nz:G.nz,res:G.res,N:G.N,tauN:G.tauN,ACH:G.ACH,volRoom:G.volRoom,Qtot:G.Qtot,\n'
     +'         solid:G.solid,wall:G.wall,S:G.S,vc:G.vc,dirMask:G.dirMask,extMask:G.extMask},\n'
     +'      sim:{age:sim.age,temp:sim.temp,res:sim.res,streams:sim.streams,conv:sim.conv,warn:sim.warn,connected:sim.connected}\n'
     +'    });\n'
     +'  }catch(err){\n'
-    +'    post({type:"error",message:err.message||String(err)});\n'
+    +'    post({type:"error",message:err.message||String(err),seq:d.seq});\n'
     +'  }\n'
     +'};\n';
 }
@@ -1542,7 +1605,7 @@ async function resoudre(){
   if(solving)return;
   if(!state.extracts.length){alert('Ajoutez au moins une reprise d’air (extraction) avant de résoudre.');return;}
   if(state.supplies.reduce((s,b)=>s+(b.q||0),0)<=0){alert('Le débit total de soufflage est nul.');return;}
-  solving=true;stopFlag=false;paused=false;
+  solving=true;stopFlag=false;paused=false;killPreview();
   $('#btnLancer').disabled=true;$('#btnTout').disabled=true;$('#btnPause').disabled=false;$('#btnPause').textContent='Pause';
   try{
     const result=await solvePiece(state);
@@ -1566,7 +1629,7 @@ async function resoudre(){
 /* Résout toutes les pièces de l'étude, une par une (résultats conservés par pièce) */
 async function resoudreTout(){
   if(solving)return;
-  solving=true;stopFlag=false;paused=false;
+  solving=true;stopFlag=false;paused=false;killPreview();
   $('#btnLancer').disabled=true;$('#btnTout').disabled=true;$('#btnPause').disabled=false;$('#btnPause').textContent='Pause';
   const n=study.pieces.length;
   let ok=0;
@@ -1601,31 +1664,38 @@ function pauseReprendre(){
 /* --- Aperçu instantané (mode présentation) : résolution rapide sur le thread principal
    (champ potentiel + jets + flottabilité + transport court) pendant qu'on déplace une
    ouverture/meuble à la souris ; la résolution complète (worker) se lance au relâchement. --- */
-let _apLast=0,_apTimer=0;
+let _apLast=0,_apTimer=0,_apSeq=0,_previewWorker=null;
+function killPreview(){_apSeq++;if(_previewWorker){_previewWorker.terminate();_previewWorker=null;}}
 function demandeApercu(){
   if(solving)return;
   const el=$('#chkApercu');if(!el||!el.checked)return;
-  if(G.N>45000)return; /* grille trop fine pour un aperçu fluide */
   const now=Date.now();
   if(!_apTimer&&now-_apLast>450){_apLast=now;apercuRapide();}
   else if(!_apTimer)_apTimer=setTimeout(()=>{_apTimer=0;demandeApercu();},470);
 }
 function apercuRapide(){
   if(solving||!state.extracts.length)return;
-  try{
-    buildGrid();buildWindowData();computeSources();buildHeatSources();
-    const phi=solvePoissonField(G.S,false,1500,3e-4);
-    vFromPhi(phi);addJets();project(1500,3e-4);
-    cellVel();distParoi();computeNuT();
-    let age=solveTransport('age',1800,3e-4),temp=solveTransport('T',1800,3e-4);
-    addBuoyancy(temp);project(1500,3e-4);cellVel();computeNuT();
-    age=solveTransport('age',1500,3e-4);temp=solveTransport('T',1500,3e-4);
-    sim={age:age,temp:temp,streams:[],conv:[],warn:(G.warn||[]).slice(),preview:true};
-    computeResults();buildStreamlines();
-    $('#btnRapport').disabled=false;$('#btnPng').disabled=false;$('#btnCsv').disabled=false;
-    setP(1,'⚡ Aperçu rapide (approximatif) — relâchez la souris pour lancer la résolution complète.');
-    updateStats();drawHeatmap();render3D();
-  }catch(e){}
+  killPreview();
+  _apSeq++;const seq=_apSeq;
+  const code=buildWorkerCode();
+  const blob=new Blob([code],{type:'application/javascript'});
+  const url=URL.createObjectURL(blob);
+  _previewWorker=new Worker(url);
+  URL.revokeObjectURL(url);
+  _previewWorker.onmessage=(e)=>{
+    const d=e.data;
+    if(d.seq!==_apSeq)return; /* demande périmée (la souris a bougé entre-temps) */
+    if(d.type==='done'&&d.preview){
+      killPreview();
+      Object.assign(G,d.G);
+      sim=d.sim;sim.preview=true;
+      $('#btnRapport').disabled=false;$('#btnPng').disabled=false;$('#btnCsv').disabled=false;
+      setP(1,'⚡ Aperçu rapide (approximatif) — relâchez la souris pour lancer la résolution complète.');
+      updateStats();drawHeatmap();render3D();
+    }
+  };
+  _previewWorker.onerror=()=>{_previewWorker=null;};
+  _previewWorker.postMessage({cmd:'preview',seq:seq,state:JSON.parse(JSON.stringify(state))});
 }
 function reinitUI(){
   $('#btnLancer').disabled=false;$('#btnTout').disabled=false;$('#btnPause').disabled=true;$('#btnPause').textContent='Pause';
@@ -2046,17 +2116,17 @@ function draw3DScene(ctx,w,h,camObj,opts){
   for(let e=0;e<poly.length;e++){
     const ed=edgeOf(poly,e);
     const facing=ed.out[0]*camDir[0]+ed.out[1]*camDir[1];
-    if(facing<=0.03)continue;
+    if(facing>=-0.03)continue; /* paroi du FOND : on regarde l'intérieur de la pièce */
     const A=P(ed.A[0],ed.A[1],0),B=P(ed.B[0],ed.B[1],0),C=P(ed.B[0],ed.B[1],r.H),D2=P(ed.A[0],ed.A[1],r.H);
     const shade=0.5+0.5*Math.max(0,ed.out[0]*LIGHT[0]+ed.out[1]*LIGHT[1]+0.25);
     ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.lineTo(C[0],C[1]);ctx.lineTo(D2[0],D2[1]);ctx.closePath();
-    ctx.fillStyle='rgba(56,78,108,'+(0.22+0.3*shade)+')';ctx.fill();
+    ctx.fillStyle='rgba(56,78,108,'+(0.30+0.35*shade)+')';ctx.fill();
     ctx.strokeStyle='#3d4c63';ctx.lineWidth=1;ctx.stroke();
   }
   /* 2b) fenêtres : rectangles ambrés sur les bords visibles */
   for(const w2 of (state.windows||[])){
     const ed=edgeOf(poly,clamp(w2.edge==null?0:w2.edge,0,poly.length-1));
-    if(ed.out[0]*camDir[0]+ed.out[1]*camDir[1]<=0.03)continue;
+    if(ed.out[0]*camDir[0]+ed.out[1]*camDir[1]>=-0.03)continue;
     const a0=w2.pos||0,a1=a0+(w2.larg||0),z0=w2.z==null?0:w2.z,z1=z0+(w2.haut||0);
     const c2=[[ed.A[0]+ed.dx*a0,ed.A[1]+ed.dy*a0,z0],[ed.A[0]+ed.dx*a1,ed.A[1]+ed.dy*a1,z0],[ed.A[0]+ed.dx*a1,ed.A[1]+ed.dy*a1,z1],[ed.A[0]+ed.dx*a0,ed.A[1]+ed.dy*a0,z1]];
     ctx.beginPath();ctx.moveTo(P(c2[0][0],c2[0][1],c2[0][2])[0],P(c2[0][0],c2[0][1],c2[0][2])[1]);
@@ -2242,7 +2312,7 @@ function attach3D(){
   window.addEventListener('mouseup',()=>{drag=false;});
   cv.addEventListener('mousemove',e=>{
     if(!drag)return;
-    cam.yaw+=(e.clientX-lx)*0.005;
+    cam.yaw-=(e.clientX-lx)*0.005;
     cam.pitch=clamp(cam.pitch+(e.clientY-ly)*0.005,-1.4,1.4);
     lx=e.clientX;ly=e.clientY;render3D();
   });
@@ -2357,7 +2427,7 @@ function genererRapport(){
   const slices=[];for(let z=0.5;z<r.H;z+=0.5)slices.push(Math.round(z*100)/100);
   if(slices.indexOf(s.tranche)<0)slices.push(s.tranche);slices.sort((a,b)=>a-b);
   const imgs=slices.map(z=>{
-    const cv=document.createElement('canvas');cv.width=960;cv.height=700;
+    const cv=document.createElement('canvas');cv.width=720;cv.height=525;
     drawHeatmapTo(cv,z,s.grandeur);
     return {z:z,src:cv.toDataURL('image/png')};
   });
@@ -2369,7 +2439,7 @@ function genererRapport(){
   const rowsS=arr=>arr.map((b,i)=>`<tr><td>S${i+1}</td><td>${esc(montageLabel(b.montage))}${b.montage==='cloison'?' — '+esc((state.mobilier[b.cloison|0]||{}).nom||'')+' / '+esc(FACE_LABEL[b.face]||''):''}</td><td>${TYPE_LABEL[b.type]||b.type}</td><td>${b.dim}</td><td>${b.q}</td><td>${b.v0?fmt(b.v0,2):'auto ('+fmt(v0Of(b),2)+')'}</td><td>${b.portee?fmt(b.portee,1)+' (fab.)':'auto ≈ '+fmt(porteeOf(b),1)}</td><td>${posOf(b,r).map(v=>fmt(v,2)).join(' / ')}</td></tr>`).join('');
   // récap multi-pièces (métriques des pièces résolues)
   const recap=study.pieces.length>1?'<h2>Étude multi-pièces — récap des pièces résolues</h2>'+(study.pieces.some(p=>p._simLite&&p._simLite.res)?'<table><tr><th>Pièce</th><th>τN (min)</th><th>ACH</th><th>Âge moy. (min)</th><th>ERE (%)</th><th>Vol. ≥ 100 % (%)</th><th>Zones mortes (%)</th><th>v zone occ. (m/s)</th><th>T zone occ. (°C)</th></tr>'+study.pieces.map(p=>{const R2=p._simLite&&p._simLite.res;if(!R2)return'<tr><td>'+esc(p.nom||'')+'</td><td colspan="8">non résolue</td></tr>';return '<tr><td>'+esc(p.nom||'')+'</td><td>'+fmt(R2.tauN/60,1)+'</td><td>'+fmt(R2.ACH,1)+'</td><td>'+fmt(R2.ageMoy/60,1)+'</td><td>'+fmt(R2.ERE*100,0)+'</td><td>'+fmt(R2.pctOk,0)+'</td><td>'+fmt(R2.pctDead,0)+'</td><td>'+fmt(R2.oz.v,2)+'</td><td>'+fmt(R2.oz.T,1)+'</td></tr>';}).join('')+'</table>':'<p>Une seule pièce résolue.</p>'):'';
-  rapportHTML='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rapport de simulation de balayage</title><style>body{font-family:Arial,sans-serif;font-size:13px;margin:24px;color:#111}h1{font-size:18px}h2{font-size:14px;border-bottom:1px solid #999;margin-top:18px;padding-bottom:3px}table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}img{max-width:100%;border:1px solid #999}.kpi{display:flex;gap:12px;flex-wrap:wrap}.kpi div{border:1px solid #bbb;padding:8px 12px;min-width:110px}.kpi b{display:block;font-size:16px}p{line-height:1.5}</style></head><body>'
+  rapportHTML='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rapport de simulation de balayage</title><style>body{font-family:Arial,sans-serif;font-size:13px;margin:24px;color:#111}h1{font-size:18px}h2{font-size:14px;border-bottom:1px solid #999;margin-top:18px;padding-bottom:3px}table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}img{max-width:100%;border:1px solid #999}.kpi{display:flex;gap:12px;flex-wrap:wrap}.kpi div{border:1px solid #bbb;padding:8px 12px;min-width:110px}.kpi b{display:block;font-size:16px}p{line-height:1.5}.sliceGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}</style></head><body>'
   +'<h1>Rapport de simulation de balayage de ventilation — '+esc(new Date().toLocaleString('fr-FR'))+'</h1>'
   +'<h2>Pièce active : '+esc(state.nom||('Pièce '+(study.active+1)))+' — conditions</h2><p>Plan : '+(r.poly?'polygone à '+poly.length+' sommets':'rectangle')+' — emprise '+fmt(bb.x1-bb.x0,1)+' × '+fmt(bb.y1-bb.y0,1)+' m — aire '+fmt(area,1)+' m² — hauteur '+r.H+' m (V = '+fmt(area*r.H,1)+' m³) — T ambiante '+r.Tamb+' °C — T de soufflage '+r.Tsouf+' °C — <b>T extérieure '+fmt(r.Text==null?r.Tamb:r.Text,1)+' °C</b> — résolution de grille '+s.res+' m — seed '+s.seed+' — zone d’occupation z ≤ '+s.zocc+' m — vTerm (portée des jets) '+fmt(s.vTerm||0.25,2)+' m/s — échange parois h = '+fmt(s.hWall==null?2:s.hWall,1)+(s.rad?' + 5,5 (rayonnement)':'')+' W/m²K — couplage flottabilité '+clamp(Math.round(s.nCoupl||2),2,8)+' passe(s)'+(s.wake?' — sillage des obstacles activé':' — sillage désactivé')+'.</p>'
   +recap
@@ -2396,7 +2466,7 @@ function genererRapport(){
   +'<h2>Convergence et avertissements</h2><p>Résolution en régime permanent par itération jusqu’à convergence : '+(sim.conv?esc(sim.conv.join(' · ')):'')+'. Résidu de divergence max : '+sim.res.divRes.toExponential(1)+'. Bilan aux reprises : '+fmt(sim.res.bilanAge/60,1)+' min (théorie : τN = '+fmt(sim.res.tauN/60,1)+' min).'+(sim.connected===false?' <b style="color:#c00">ATTENTION : aucun chemin d’air soufflage → reprise (volume scindé ?).</b>':'')+(sim.warn&&sim.warn.length?'<br>'+sim.warn.map(esc).join('<br>'):'')+'</p>'
   +'<h2>Vue 3D isométrique — pièce, mobilier, fenêtres, bouches, lignes de courant</h2><img src="'+isoImg+'">'
   +'<h2>Heat maps — '+GRAND_LABEL[s.grandeur]+' — une tranche tous les 0,5 m</h2>'
-  +imgs.map(o=>'<h3 style="font-size:12px;margin:10px 0 4px">Tranche z = '+fmt(o.z,2)+' m</h3><img src="'+o.src+'">').join('')
+  +'<div class="sliceGrid">'+imgs.map(o=>'<div><h3 style="font-size:12px;margin:6px 0 3px">Tranche z = '+fmt(o.z,2)+' m</h3><img src="'+o.src+'"></div>').join('')+'</div>'
   +'<h2>Méthodologie et limites</h2><p>Modèle eulérien en régime permanent sur grille 3D (les cellules hors du polygone de la pièce sont solides) : écoulement potentiel (sources aux soufflages, puits aux reprises, parois sans pénétration) + jets analytiques (1/x rond, 1/√x fente, expansion conique gaussienne ; v0 et portée calibrées sur les données fabricant si renseignées, sinon v0 = Q/(0,65·section) et noyau K·d, K = 6,2), puis projection de Helmholtz garantissant ∇·v = S et v·n = 0 aux parois. Âge de l’air et température résolus en permanent (advection upwind + diffusion turbulente ν<sub>t</sub> = ν<sub>t0</sub> + c·|v|·d<sub>paroi</sub>), couplage flottabilité de Boussinesq faible en 2 passes. <b>Fenêtres</b> : les faces de bord concernées échangent avec la température extérieure à U (W/m²K) ; l’infiltration éventuelle est une entrée d’air neuf (âge 0) à T extérieure, le débit extrait total = soufflage + infiltration. <b>Couleurs</b> : bleu = froid / petit / faible, rouge = chaud / grand / élevé, sur toutes les grandeurs. Taux de balayage local = τN / âge local. <b>Phase 3</b> : couplage flottabilité Boussinesq en plusieurs passes (réglable, section conditions), sillage optionnel des obstacles (déficit de vitesse dans un cône en aval des meubles, re-projection pour conserver la masse), apports internes (charge W du mobilier répartie sur les cellules fluides au contact), rayonnement de parois linéarisé (h + 5,5 W/m²K si activé) et infiltration par perméabilité Q4Pa (Q = Q4Pa·S·(ΔP/4)^(2/3), ΔP supposé). Outil d’aide au dimensionnement — ne remplace pas une étude CFD réglementaire (RE2020, NF EN 16798-1, ASHRAE 62.1).</p>'
   +'</body></html>';
   $('#overlay').hidden=false;
